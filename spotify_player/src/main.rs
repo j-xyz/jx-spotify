@@ -22,6 +22,8 @@ use std::{collections::VecDeque, io::Write, sync::Arc};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
+use crate::utils::{create_private_file, ensure_private_dir};
+
 fn init_spotify(
     client_pub: &flume::Sender<client::ClientRequest>,
     client: &client::AppClient,
@@ -61,10 +63,8 @@ fn init_logging(
         // default to log the current crate and librespot crates
         std::env::set_var("RUST_LOG", "spotify_player=info,librespot=info");
     }
-    if !log_folder.exists() {
-        std::fs::create_dir_all(log_folder)?;
-    }
-    let log_file = std::fs::File::create(log_folder.join(format!("{log_prefix}.log")))
+    ensure_private_dir(log_folder)?;
+    let log_file = create_private_file(&log_folder.join(format!("{log_prefix}.log")))
         .context("failed to create log file")?;
 
     let fmt_layer = tracing_subscriber::fmt::layer()
@@ -80,7 +80,7 @@ fn init_logging(
         .init();
 
     // initialize the application's panic backtrace
-    let backtrace_file = std::fs::File::create(log_folder.join(format!("{log_prefix}.backtrace")))
+    let backtrace_file = create_private_file(&log_folder.join(format!("{log_prefix}.backtrace")))
         .context("failed to create backtrace file")?;
     let backtrace_file = std::sync::Mutex::new(backtrace_file);
     std::panic::set_hook(Box::new(move |info| {
@@ -246,22 +246,17 @@ fn main() -> Result<()> {
         .get_one::<String>("config-folder")
         .expect("config-folder should have default value")
         .into();
-    if !config_folder.exists() {
-        std::fs::create_dir_all(&config_folder)?;
-    }
+    ensure_private_dir(&config_folder)?;
 
     let cache_folder: std::path::PathBuf = args
         .get_one::<String>("cache-folder")
         .expect("cache-folder should have a default value")
         .into();
+    ensure_private_dir(&cache_folder)?;
     let cache_audio_folder = cache_folder.join("audio");
-    if !cache_audio_folder.exists() {
-        std::fs::create_dir_all(&cache_audio_folder)?;
-    }
+    ensure_private_dir(&cache_audio_folder)?;
     let cache_image_folder = cache_folder.join("image");
-    if !cache_image_folder.exists() {
-        std::fs::create_dir_all(&cache_image_folder)?;
-    }
+    ensure_private_dir(&cache_image_folder)?;
 
     // initialize the application configs
     {
@@ -292,8 +287,7 @@ fn main() -> Result<()> {
             init_logging(log_folder, log_buffer.clone())
                 .context("failed to initialize application's logging")?;
 
-            // log the application's configurations
-            tracing::info!("Configurations: {:?}", config::get_config());
+            tracing::info!("Application configuration initialized.");
 
             let is_daemon;
 

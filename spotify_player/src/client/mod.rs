@@ -13,6 +13,7 @@ use crate::{
         UserId, TTL_CACHE_DURATION, USER_LIKED_TRACKS_URI, USER_RECENTLY_PLAYED_TRACKS_URI,
         USER_TOP_TRACKS_URI,
     },
+    utils::{create_private_file, ensure_private_file},
 };
 
 use std::io::Write;
@@ -69,7 +70,10 @@ impl AppClient {
         let configs = config::get_config();
         let auth_config = AuthConfig::new(configs)?;
 
-        let mut user_client = configs.app_config.get_user_client_id()?.clone().map(|id| {
+        let mut user_client = if let Some(id) = configs.app_config.get_user_client_id()?.clone() {
+            let token_cache_path = configs.cache_folder.join("user_client_token.json");
+            ensure_private_file(&token_cache_path)?;
+
             let creds = rspotify::Credentials { id, secret: None };
             let mut scopes = auth::OAUTH_SCOPES
                 .iter()
@@ -84,11 +88,15 @@ impl AppClient {
             };
             let config = rspotify::Config {
                 token_cached: true,
-                cache_path: configs.cache_folder.join("user_client_token.json"),
+                cache_path: token_cache_path,
                 ..Default::default()
             };
-            rspotify::AuthCodePkceSpotify::with_config(creds, oauth, config)
-        });
+            Some(rspotify::AuthCodePkceSpotify::with_config(
+                creds, oauth, config,
+            ))
+        } else {
+            None
+        };
 
         if let Some(client) = &mut user_client {
             let url = client
@@ -1487,7 +1495,7 @@ impl AppClient {
         }
 
         let access_token = self.token().await.context("get token")?;
-        tracing::debug!("{access_token} {url}");
+        tracing::debug!("Sending Spotify API request to {url}");
 
         let response = self
             .http
@@ -1502,7 +1510,7 @@ impl AppClient {
 
         let status = response.status();
         let text = process_spotify_api_response(&response.text().await?);
-        tracing::debug!("{text}");
+        tracing::debug!("Received Spotify API response from {url} with status {status}");
 
         if status != StatusCode::OK {
             anyhow::bail!("failed to send a Spotify API request {url}: {text}");
@@ -1928,7 +1936,7 @@ impl AppClient {
 
         if saved {
             tracing::info!("Saving the retrieved image into {}", path.display());
-            let mut file = std::fs::File::create(path)?;
+            let mut file = create_private_file(path)?;
             file.write_all(&bytes)?;
         }
 

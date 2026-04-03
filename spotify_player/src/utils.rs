@@ -1,4 +1,9 @@
-use std::borrow::Cow;
+use std::{
+    borrow::Cow,
+    fs::{File, OpenOptions},
+    io::{self, Write},
+    path::Path,
+};
 
 /// formats a time duration into a "{minutes}:{seconds}" format
 pub fn format_duration(duration: &chrono::Duration) -> String {
@@ -47,6 +52,61 @@ pub fn parse_uri(uri: &str) -> Cow<'_, str> {
         Cow::Owned([parts[0], parts[3], parts[4]].join(":"))
     } else {
         Cow::Borrowed(uri)
+    }
+}
+
+pub fn ensure_private_dir(path: &Path) -> io::Result<()> {
+    std::fs::create_dir_all(path)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))?;
+    }
+
+    Ok(())
+}
+
+pub fn ensure_private_file(path: &Path) -> io::Result<()> {
+    let _ = open_private_file(path, false)?;
+    Ok(())
+}
+
+pub fn create_private_file(path: &Path) -> io::Result<File> {
+    open_private_file(path, true)
+}
+
+pub fn write_private_file(path: &Path, content: &str) -> io::Result<()> {
+    let mut file = create_private_file(path)?;
+    file.write_all(content.as_bytes())
+}
+
+fn open_private_file(path: &Path, truncate: bool) -> io::Result<File> {
+    if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+        ensure_private_dir(parent)?;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+        let file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(truncate)
+            .mode(0o600)
+            .open(path)?;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+        Ok(file)
+    }
+
+    #[cfg(not(unix))]
+    {
+        OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(truncate)
+            .open(path)
     }
 }
 

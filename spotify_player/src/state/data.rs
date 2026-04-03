@@ -4,6 +4,8 @@ use std::{collections::HashMap, path::Path};
 use serde::{de::DeserializeOwned, Serialize};
 use std::sync::LazyLock;
 
+use crate::utils::create_private_file;
+
 use super::model::{
     Album, Artist, Category, Context, ContextId, Id, Playlist, PlaylistFolderItem,
     PlaylistFolderNode, SearchResults, Show, Track,
@@ -203,7 +205,7 @@ pub fn store_data_into_file_cache<T: Serialize>(
     data: &T,
 ) -> std::io::Result<()> {
     let path = cache_folder.join(format!("{key:?}_cache.json"));
-    let f = BufWriter::new(std::fs::File::create(path)?);
+    let f = BufWriter::new(create_private_file(&path)?);
     serde_json::to_writer(f, data)?;
     Ok(())
 }
