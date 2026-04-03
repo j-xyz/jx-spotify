@@ -2,20 +2,39 @@ use crate::{auth::AuthConfig, client};
 
 use super::{
     config, init_cli, start_socket, AlbumId, Command, ContextType, EditAction, GetRequest,
-    IdOrName, ItemType, Key, PlaylistCommand, PlaylistId, Request, Response, TrackId,
+    IdOrName, ItemType, Key, PlaylistCommand, PlaylistId, Request, Response, SocketRequest,
+    TrackId,
     MAX_REQUEST_SIZE,
 };
 use anyhow::{Context, Result};
 use clap::{ArgMatches, Id};
 use clap_complete::{generate, Shell};
-use std::net::UdpSocket;
 
-fn receive_response(socket: &UdpSocket) -> Result<Response> {
+#[cfg(not(unix))]
+type ClientSocket = std::net::UdpSocket;
+
+#[cfg(unix)]
+struct ClientSocket {
+    socket: std::os::unix::net::UnixDatagram,
+    path: std::path::PathBuf,
+}
+
+#[cfg(unix)]
+impl Drop for ClientSocket {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+fn receive_response(socket: &ClientSocket) -> Result<Response> {
     // read response from the server's socket, which can be split into
     // smaller chunks of data
     let mut data = Vec::new();
     let mut buf = [0; 4096];
     loop {
+        #[cfg(unix)]
+        let n_bytes = socket.socket.recv(&mut buf)?;
+        #[cfg(not(unix))]
         let (n_bytes, _) = socket.recv_from(&mut buf)?;
         if n_bytes == 0 {
             // end of chunk
@@ -143,41 +162,137 @@ fn handle_playback_subcommand(args: &ArgMatches) -> Result<Request> {
 /// to the client via a UDP socket.
 /// If no running client found, create a new client running in a separate thread to
 /// handle the socket request.
-fn try_connect_to_client(socket: &UdpSocket, configs: &config::Configs) -> Result<()> {
-    let port = configs.app_config.client_port;
-    socket.connect(("127.0.0.1", port))?;
+fn try_connect_to_client(socket: &ClientSocket, configs: &config::Configs) -> Result<()> {
+    #[cfg(unix)]
+    let connect_result = socket.socket.connect(super::socket_path());
+    #[cfg(not(unix))]
+    let connect_result = socket.connect(("127.0.0.1", configs.app_config.client_port));
+
+    let mut needs_spawn = false;
+    match connect_result {
+        Ok(()) => {}
+        Err(err)
+            if matches!(
+                err.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
+            ) =>
+        {
+            needs_spawn = true;
+        }
+        Err(err) => return Err(err.into()),
+    }
+
+    if needs_spawn {
+        spawn_client_socket_server(configs)?;
+        #[cfg(unix)]
+        socket.socket.connect(super::socket_path())?;
+        #[cfg(not(unix))]
+        socket.connect(("127.0.0.1", configs.app_config.client_port))?;
+    }
 
     // send an empty buffer as a connection request to the client
+    #[cfg(unix)]
+    socket.socket.send(&[])?;
+    #[cfg(not(unix))]
     socket.send(&[])?;
-    if let Err(err) = socket.recv(&mut [0; 1]) {
+
+    #[cfg(unix)]
+    let recv_result = socket.socket.recv(&mut [0; 1]);
+    #[cfg(not(unix))]
+    let recv_result = socket.recv(&mut [0; 1]);
+
+    if let Err(err) = recv_result {
         if let std::io::ErrorKind::ConnectionRefused = err.kind() {
-            // no running `spotify_player` instance found,
-            // initialize a new client to handle the current CLI command
-
-            let rt = tokio::runtime::Runtime::new()?;
-
-            // create a Spotify API client
-            let client = rt
-                .block_on(client::AppClient::new())
-                .context("construct app client")?;
-            rt.block_on(client.new_session(None, false))
-                .context("new session")?;
-
-            // create a client socket for handling CLI commands
-            // NOTE: the socket must be bound *before* spawning the thread to avoid a
-            // race condition where the caller sends a request before the socket is ready.
-            let client_socket = rt.block_on(tokio::net::UdpSocket::bind(("127.0.0.1", port)))?;
-
-            // spawn a thread to handle the CLI request
-            std::thread::spawn(move || {
-                rt.block_on(start_socket(&client, None, Some(client_socket)));
-            });
+            spawn_client_socket_server(configs)?;
+            #[cfg(unix)]
+            socket.socket.connect(super::socket_path())?;
+            #[cfg(not(unix))]
+            socket.connect(("127.0.0.1", configs.app_config.client_port))?;
         } else {
             return Err(err.into());
         }
     }
 
     Ok(())
+}
+
+fn spawn_client_socket_server(configs: &config::Configs) -> Result<()> {
+    // no running `spotify_player` instance found,
+    // initialize a new client to handle the current CLI command
+
+    let rt = tokio::runtime::Runtime::new()?;
+
+    // create a Spotify API client
+    let client = rt
+        .block_on(client::AppClient::new())
+        .context("construct app client")?;
+    rt.block_on(client.new_session(None, false))
+        .context("new session")?;
+
+    // create a client socket for handling CLI commands
+    // NOTE: the socket must be bound *before* spawning the thread to avoid a
+    // race condition where the caller sends a request before the socket is ready.
+    #[cfg(unix)]
+    let client_socket = {
+        let socket_path = super::socket_path();
+        if let Some(parent) = socket_path.parent() {
+            crate::utils::ensure_private_dir(parent)?;
+        }
+        match std::fs::remove_file(&socket_path) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(err.into()),
+        }
+        let socket = tokio::net::UnixDatagram::bind(&socket_path)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o600))?;
+        }
+        socket
+    };
+
+    #[cfg(not(unix))]
+    let client_socket = rt.block_on(tokio::net::UdpSocket::bind((
+        "127.0.0.1",
+        configs.app_config.client_port,
+    )))?;
+
+    // spawn a thread to handle the CLI request
+    std::thread::spawn(move || {
+        rt.block_on(start_socket(&client, None, Some(client_socket)));
+    });
+
+    Ok(())
+}
+
+#[cfg(unix)]
+fn create_client_socket(configs: &config::Configs) -> Result<ClientSocket> {
+    let socket_dir = configs.cache_folder.join("client-sockets");
+    crate::utils::ensure_private_dir(&socket_dir)?;
+
+    let socket_path = socket_dir.join(format!(
+        "client-{}-{:032x}.sock",
+        std::process::id(),
+        rand::random::<u128>()
+    ));
+
+    let socket = std::os::unix::net::UnixDatagram::bind(&socket_path)?;
+
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o600))?;
+    }
+
+    Ok(ClientSocket {
+        socket,
+        path: socket_path,
+    })
+}
+
+#[cfg(not(unix))]
+fn create_client_socket(_configs: &config::Configs) -> Result<ClientSocket> {
+    Ok(std::net::UdpSocket::bind("127.0.0.1:0")?)
 }
 
 pub fn handle_cli_subcommand(cmd: &str, args: &ArgMatches) -> Result<()> {
@@ -206,7 +321,7 @@ pub fn handle_cli_subcommand(cmd: &str, args: &ArgMatches) -> Result<()> {
         _ => {}
     }
 
-    let socket = UdpSocket::bind("127.0.0.1:0")?;
+    let socket = create_client_socket(configs)?;
     try_connect_to_client(&socket, configs).context("try to connect to a client")?;
 
     // construct a socket request based on the CLI command and its arguments
@@ -228,8 +343,14 @@ pub fn handle_cli_subcommand(cmd: &str, args: &ArgMatches) -> Result<()> {
     };
 
     // send the request to the client's socket
-    let request_buf = serde_json::to_vec(&request)?;
+    let request_buf = serde_json::to_vec(&SocketRequest {
+        auth_token: super::load_or_create_socket_auth_token()?,
+        request,
+    })?;
     assert!(request_buf.len() <= MAX_REQUEST_SIZE);
+    #[cfg(unix)]
+    socket.socket.send(&request_buf)?;
+    #[cfg(not(unix))]
     socket.send(&request_buf)?;
 
     // receive and handle a response from the client's socket

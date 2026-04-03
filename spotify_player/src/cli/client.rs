@@ -1,14 +1,12 @@
 use std::{
     collections::HashSet,
     fmt::Write as _,
-    fs::{create_dir_all, remove_dir_all},
+    fs::{remove_dir_all, remove_file},
     io::Write,
-    net::SocketAddr,
 };
 
 use anyhow::{Context as _, Result};
 use rand::seq::SliceRandom;
-use tokio::net::UdpSocket;
 use tracing::Instrument;
 
 use crate::{
@@ -19,33 +17,108 @@ use crate::{
         AlbumId, ArtistId, Context, ContextId, Id, PlayableId, Playback, PlaybackMetadata,
         PlaylistId, SharedState, TrackId,
     },
+    utils::{create_private_file, ensure_private_dir},
 };
 use rspotify::prelude::{BaseClient, OAuthClient};
 
 use super::{
     Command, Deserialize, EditAction, GetRequest, IdOrName, ItemId, ItemType, Key, PlaylistCommand,
-    Response, Serialize, MAX_REQUEST_SIZE,
+    Response, Serialize, SocketRequest, MAX_REQUEST_SIZE,
 };
+
+#[cfg(unix)]
+type ClientSocket = tokio::net::UnixDatagram;
+#[cfg(not(unix))]
+type ClientSocket = tokio::net::UdpSocket;
+
+#[cfg(unix)]
+type ClientSocketAddr = tokio::net::unix::SocketAddr;
+#[cfg(not(unix))]
+type ClientSocketAddr = std::net::SocketAddr;
 
 pub async fn start_socket(
     client: &AppClient,
     state: Option<&SharedState>,
-    socket: Option<tokio::net::UdpSocket>,
+    socket: Option<ClientSocket>,
 ) {
+    let socket_auth_token = match super::load_or_create_socket_auth_token() {
+        Ok(token) => token,
+        Err(err) => {
+            tracing::error!("Failed to initialize the client socket auth token: {err:#}");
+            return;
+        }
+    };
+
     let socket = if let Some(s) = socket {
         s
     } else {
-        let configs = config::get_config();
-        let port = configs.app_config.client_port;
-        tracing::info!("Starting a client socket at 127.0.0.1:{port}");
+        #[cfg(unix)]
+        {
+            let socket_path = super::socket_path();
+            if let Some(parent) = socket_path.parent() {
+                if let Err(err) = ensure_private_dir(parent) {
+                    tracing::warn!(
+                        "Failed to prepare the client socket folder {}: {err:#}",
+                        parent.display()
+                    );
+                    return;
+                }
+            }
+            if let Err(err) = remove_file(&socket_path) {
+                if err.kind() != std::io::ErrorKind::NotFound {
+                    tracing::warn!(
+                        "Failed to remove the stale client socket {}: {err:#}",
+                        socket_path.display()
+                    );
+                    return;
+                }
+            }
 
-        match tokio::net::UdpSocket::bind(("127.0.0.1", port)).await {
-            Ok(socket) => socket,
-            Err(err) => {
-                tracing::warn!(
-                    "Failed to create a client socket for handling CLI commands: {err:#}"
-                );
-                return;
+            tracing::info!(
+                "Starting a client unix socket at {}",
+                socket_path.display()
+            );
+
+            match tokio::net::UnixDatagram::bind(&socket_path) {
+                Ok(socket) => {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        if let Err(err) = std::fs::set_permissions(
+                            &socket_path,
+                            std::fs::Permissions::from_mode(0o600),
+                        ) {
+                            tracing::warn!(
+                                "Failed to harden the client socket permissions at {}: {err:#}",
+                                socket_path.display()
+                            );
+                        }
+                    }
+                    socket
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        "Failed to create a client unix socket for handling CLI commands: {err:#}"
+                    );
+                    return;
+                }
+            }
+        }
+
+        #[cfg(not(unix))]
+        {
+            let configs = config::get_config();
+            let port = configs.app_config.client_port;
+            tracing::info!("Starting a client socket at 127.0.0.1:{port}");
+
+            match tokio::net::UdpSocket::bind(("127.0.0.1", port)).await {
+                Ok(socket) => socket,
+                Err(err) => {
+                    tracing::warn!(
+                        "Failed to create a client socket for handling CLI commands: {err:#}"
+                    );
+                    return;
+                }
             }
         }
     };
@@ -58,18 +131,37 @@ pub async fn start_socket(
             Ok((n_bytes, dest_addr)) => {
                 if n_bytes == 0 {
                     // received a connection request from the destination address
+                    #[cfg(unix)]
+                    if let Some(path) = dest_addr.as_pathname() {
+                        socket.send_to(&[], path).await.unwrap_or_default();
+                    }
+                    #[cfg(not(unix))]
                     socket.send_to(&[], dest_addr).await.unwrap_or_default();
                     continue;
                 }
 
                 let req_buf = &buf[0..n_bytes];
-                let request: Request = match serde_json::from_slice(req_buf) {
+                let socket_request: SocketRequest = match serde_json::from_slice(req_buf) {
                     Ok(v) => v,
                     Err(err) => {
                         tracing::error!("Cannot deserialize the socket request: {err:#}");
                         continue;
                     }
                 };
+                if socket_request.auth_token != socket_auth_token {
+                    tracing::warn!(
+                        "Rejected a socket request with an invalid auth token from {dest_addr:?}"
+                    );
+                    send_response(
+                        Response::Err(b"Unauthorized request".to_vec()),
+                        &socket,
+                        dest_addr,
+                    )
+                    .await
+                    .unwrap_or_default();
+                    continue;
+                }
+                let request = socket_request.request;
 
                 let span = tracing::info_span!("socket_request", request = ?request, dest_addr = ?dest_addr);
 
@@ -97,17 +189,33 @@ pub async fn start_socket(
 
 async fn send_response(
     response: Response,
-    socket: &UdpSocket,
-    dest_addr: SocketAddr,
+    socket: &ClientSocket,
+    dest_addr: ClientSocketAddr,
 ) -> Result<()> {
     let data = serde_json::to_vec(&response)?;
 
     // as the result data can be large and may not be sent in a single UDP datagram,
     // split it into smaller chunks
     for chunk in data.chunks(4096) {
+        #[cfg(unix)]
+        {
+            let Some(path) = dest_addr.as_pathname() else {
+                anyhow::bail!("unix socket peer has no pathname");
+            };
+            socket.send_to(chunk, path).await?;
+        }
+        #[cfg(not(unix))]
         socket.send_to(chunk, dest_addr).await?;
     }
     // send an empty buffer to indicate end of chunk
+    #[cfg(unix)]
+    {
+        let Some(path) = dest_addr.as_pathname() else {
+            anyhow::bail!("unix socket peer has no pathname");
+        };
+        socket.send_to(&[], path).await?;
+    }
+    #[cfg(not(unix))]
     socket.send_to(&[], dest_addr).await?;
     Ok(())
 }
@@ -756,9 +864,7 @@ async fn playlist_import(
     let to_dir = imports_dir.join(import_to.id());
     let from_file = to_dir.join(import_from.id());
 
-    if !to_dir.exists() {
-        create_dir_all(to_dir)?;
-    }
+    ensure_private_dir(&to_dir)?;
     // Construct hash sets of the playlists' track IDs
     let to_hash_set: HashSet<TrackData> = to_tracks.collect::<HashSet<_>>();
     let from_hash_set: HashSet<TrackData> = from_tracks.collect::<HashSet<_>>();
@@ -849,11 +955,7 @@ async fn playlist_import(
     }
 
     // Create a new cache file storing the latest import data
-    let mut f = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(&from_file)?;
+    let mut f = create_private_file(&from_file)?;
     let hash_set_bytes =
         serde_json::to_vec(&from_hash_set).context("Serialize new playlist import data")?;
     f.write_all(&hash_set_bytes).context(format!(
