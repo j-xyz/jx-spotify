@@ -2,6 +2,11 @@ use anyhow::Context as _;
 use command::CommandOrAction;
 
 use crate::command::{construct_album_actions, construct_playlist_actions, construct_show_actions};
+use crate::state::{SearchTuiFocus, SearchTuiMode, SearchTuiPageUIState};
+use crate::{search_tui, ui::single_line_input::LineInput};
+use crossterm::event::KeyCode;
+use rspotify::model::Offset;
+use std::time::Instant;
 
 use super::*;
 
@@ -17,6 +22,9 @@ pub fn handle_key_sequence_for_page(
     if page_type == PageType::Search {
         return handle_key_sequence_for_search_page(key_sequence, client_pub, state, ui);
     }
+    if page_type == PageType::SearchTui {
+        return handle_key_sequence_for_search_tui_page(key_sequence, client_pub, state, ui);
+    }
 
     match config::get_config()
         .keymap_config
@@ -24,6 +32,7 @@ pub fn handle_key_sequence_for_page(
     {
         Some(CommandOrAction::Command(command)) => match page_type {
             PageType::Search => anyhow::bail!("page search type should already be handled!"),
+            PageType::SearchTui => anyhow::bail!("search tui should already be handled!"),
             PageType::Library => handle_command_for_library_page(command, client_pub, ui, state),
             PageType::Context => handle_command_for_context_page(command, client_pub, ui, state),
             PageType::Browse => handle_command_for_browse_page(command, client_pub, ui, state),
@@ -35,6 +44,7 @@ pub fn handle_key_sequence_for_page(
         },
         Some(CommandOrAction::Action(action, ActionTarget::SelectedItem)) => match page_type {
             PageType::Search => anyhow::bail!("page search type should already be handled!"),
+            PageType::SearchTui => anyhow::bail!("search tui should already be handled!"),
             PageType::Library => handle_action_for_library_page(action, client_pub, ui, state),
             PageType::Context => {
                 window::handle_action_for_focused_context_page(action, client_pub, ui, state)
@@ -44,6 +54,381 @@ pub fn handle_key_sequence_for_page(
         },
         _ => Ok(false),
     }
+}
+
+fn handle_key_sequence_for_search_tui_page(
+    key_sequence: &KeySequence,
+    client_pub: &flume::Sender<ClientRequest>,
+    state: &SharedState,
+    ui: &mut UIStateGuard,
+) -> Result<bool> {
+    if key_sequence.keys.len() != 1 {
+        return Ok(false);
+    }
+
+    let key = key_sequence.keys[0];
+    match key {
+        Key::Ctrl(KeyCode::Char('c')) => {
+            ui.is_running = false;
+            return Ok(true);
+        }
+        Key::None(KeyCode::Tab) => return toggle_search_tui_focus(ui, false),
+        Key::None(KeyCode::BackTab) => return toggle_search_tui_focus(ui, true),
+        Key::None(KeyCode::Esc) => return handle_search_tui_escape(ui),
+        _ => {}
+    }
+
+    let focus = search_tui_focus(ui);
+
+    if focus == SearchTuiFocus::Search {
+        if matches!(key, Key::None(KeyCode::Enter)) {
+            return toggle_search_tui_focus(ui, false);
+        }
+
+        if let Some(handled) = handle_search_tui_input(key, ui) {
+            return Ok(handled);
+        }
+        return Ok(false);
+    }
+
+    match key {
+        Key::None(KeyCode::Enter) => return choose_search_tui_item(client_pub, state, ui),
+        Key::None(KeyCode::Char('p')) | Key::Alt(KeyCode::Char('p')) => {
+            return play_search_tui_item(client_pub, state, ui);
+        }
+        Key::None(KeyCode::Char('r')) | Key::Alt(KeyCode::Char('r')) => {
+            return radio_search_tui_item(client_pub, state, ui);
+        }
+        Key::None(KeyCode::Char('/')) => {
+            return focus_search_tui_search(ui);
+        }
+        _ => {}
+    }
+
+    let len = search_tui_len(state, ui);
+    let selected = search_tui_selected(ui);
+    let command = match key {
+        Key::None(KeyCode::Up) | Key::None(KeyCode::Char('k')) => {
+            Some(Command::SelectPreviousOrScrollUp)
+        }
+        Key::None(KeyCode::Down) | Key::None(KeyCode::Char('j')) => {
+            Some(Command::SelectNextOrScrollDown)
+        }
+        Key::None(KeyCode::PageUp) => Some(Command::PageSelectPreviousOrScrollUp),
+        Key::None(KeyCode::PageDown) => Some(Command::PageSelectNextOrScrollDown),
+        Key::None(KeyCode::Home) | Key::None(KeyCode::Char('g')) => {
+            Some(Command::SelectFirstOrScrollToTop)
+        }
+        Key::None(KeyCode::End) | Key::None(KeyCode::Char('G')) => {
+            Some(Command::SelectLastOrScrollToBottom)
+        }
+        _ => None,
+    };
+
+    if let Some(command) = command {
+        Ok(handle_navigation_command(
+            command,
+            ui.current_page_mut(),
+            selected,
+            len,
+            None,
+        ))
+    } else {
+        Ok(false)
+    }
+}
+
+fn search_tui_focus(ui: &UIStateGuard) -> SearchTuiFocus {
+    match ui.current_page() {
+        PageState::SearchTui { state, .. } => state.focus,
+        _ => SearchTuiFocus::Search,
+    }
+}
+
+fn search_tui_selected(ui: &mut UIStateGuard) -> usize {
+    match ui.current_page() {
+        PageState::SearchTui { state, .. } => state.result_list.selected().unwrap_or_default(),
+        _ => 0,
+    }
+}
+
+fn toggle_search_tui_focus(ui: &mut UIStateGuard, reverse: bool) -> Result<bool> {
+    let PageState::SearchTui { state, .. } = ui.current_page_mut() else {
+        anyhow::bail!("expect a search tui page");
+    };
+
+    state.focus = match (state.focus, reverse) {
+        (SearchTuiFocus::Search, false) | (SearchTuiFocus::Search, true) => SearchTuiFocus::Results,
+        (SearchTuiFocus::Results, false) | (SearchTuiFocus::Results, true) => {
+            SearchTuiFocus::Search
+        }
+    };
+
+    Ok(true)
+}
+
+fn focus_search_tui_search(ui: &mut UIStateGuard) -> Result<bool> {
+    let PageState::SearchTui { state, .. } = ui.current_page_mut() else {
+        anyhow::bail!("expect a search tui page");
+    };
+    state.focus = SearchTuiFocus::Search;
+    Ok(true)
+}
+
+fn handle_search_tui_input(key: Key, ui: &mut UIStateGuard) -> Option<bool> {
+    let PageState::SearchTui { line_input, state } = ui.current_page_mut() else {
+        return Some(false);
+    };
+
+    if matches!(key, Key::None(KeyCode::Backspace)) && line_input.is_empty() {
+        return Some(if matches!(state.mode, SearchTuiMode::Playlist { .. }) {
+            reset_search_tui_to_global(line_input, state);
+            true
+        } else {
+            false
+        });
+    }
+
+    let effect = line_input.input(&key);
+    if effect.is_some() {
+        state.last_edited_at = Instant::now();
+        if line_input.is_empty() {
+            state.last_dispatched_query = None;
+        }
+        return Some(true);
+    }
+
+    None
+}
+
+fn handle_search_tui_escape(ui: &mut UIStateGuard) -> Result<bool> {
+    let PageState::SearchTui { line_input, state } = ui.current_page_mut() else {
+        anyhow::bail!("expect a search tui page");
+    };
+
+    if matches!(state.mode, SearchTuiMode::Playlist { .. }) {
+        reset_search_tui_to_global(line_input, state);
+    } else if !line_input.is_empty() {
+        *line_input = LineInput::default();
+        state.focus = SearchTuiFocus::Search;
+        state.last_dispatched_query = None;
+        state.last_edited_at = Instant::now();
+        state.result_list = Default::default();
+    } else {
+        state.focus = SearchTuiFocus::Search;
+    }
+
+    Ok(true)
+}
+
+fn reset_search_tui_to_global(line_input: &mut LineInput, state: &mut SearchTuiPageUIState) {
+    *line_input = LineInput::default();
+    state.mode = SearchTuiMode::Global;
+    state.focus = SearchTuiFocus::Search;
+    state.last_dispatched_query = None;
+    state.last_edited_at = Instant::now();
+    state.result_list = Default::default();
+}
+
+fn search_tui_len(state: &SharedState, ui: &mut UIStateGuard) -> usize {
+    let data = state.data.read();
+    let (mode, query) = match ui.current_page() {
+        PageState::SearchTui { line_input, state } => (&state.mode, line_input.get_text()),
+        _ => return 0,
+    };
+
+    match mode {
+        SearchTuiMode::Global => search_tui::build_items(&data, mode, &query).len(),
+        SearchTuiMode::Playlist { .. } => {
+            search_tui::build_playlist_tracks(&data, mode, &query).len()
+        }
+    }
+}
+
+fn choose_search_tui_item(
+    client_pub: &flume::Sender<ClientRequest>,
+    state: &SharedState,
+    ui: &mut UIStateGuard,
+) -> Result<bool> {
+    let focus = search_tui_focus(ui);
+    if focus == SearchTuiFocus::Search {
+        return toggle_search_tui_focus(ui, false);
+    }
+
+    let selected = search_tui_selected(ui);
+    let (mode, query) = match ui.current_page() {
+        PageState::SearchTui { line_input, state } => (state.mode.clone(), line_input.get_text()),
+        _ => anyhow::bail!("expect a search tui page"),
+    };
+
+    let data = state.data.read();
+    match mode {
+        SearchTuiMode::Global => {
+            let items = search_tui::build_items(&data, &SearchTuiMode::Global, &query);
+            if selected >= items.len() {
+                return Ok(false);
+            }
+
+            let item = items[selected].clone();
+            drop(data);
+            play_or_open_search_tui_item(item, client_pub, state, ui, false)
+        }
+        SearchTuiMode::Playlist {
+            ref playlist_id,
+            playlist_name: _,
+        } => {
+            let tracks = search_tui::build_playlist_tracks(&data, &mode, &query);
+            if selected >= tracks.len() {
+                return Ok(false);
+            }
+            let track = tracks[selected].clone();
+            drop(data);
+            state.player.write().currently_playing_tracks_id = None;
+            client_pub.send(ClientRequest::Player(PlayerRequest::StartPlayback(
+                Playback::Context(
+                    ContextId::Playlist(playlist_id.clone_static()),
+                    Some(Offset::Uri(track.id.uri())),
+                ),
+                None,
+            )))?;
+            Ok(true)
+        }
+    }
+}
+
+fn play_search_tui_item(
+    client_pub: &flume::Sender<ClientRequest>,
+    state: &SharedState,
+    ui: &mut UIStateGuard,
+) -> Result<bool> {
+    let selected = search_tui_selected(ui);
+    let (mode, query) = match ui.current_page() {
+        PageState::SearchTui { line_input, state } => (state.mode.clone(), line_input.get_text()),
+        _ => anyhow::bail!("expect a search tui page"),
+    };
+
+    let data = state.data.read();
+    match mode {
+        SearchTuiMode::Global => {
+            let items = search_tui::build_items(&data, &SearchTuiMode::Global, &query);
+            if selected >= items.len() {
+                return Ok(false);
+            }
+
+            let item = items[selected].clone();
+            drop(data);
+            play_or_open_search_tui_item(item, client_pub, state, ui, true)
+        }
+        SearchTuiMode::Playlist { .. } => {
+            drop(data);
+            choose_search_tui_item(client_pub, state, ui)
+        }
+    }
+}
+
+fn play_or_open_search_tui_item(
+    item: search_tui::SearchTuiItem,
+    client_pub: &flume::Sender<ClientRequest>,
+    state: &SharedState,
+    ui: &mut UIStateGuard,
+    force_play_playlist: bool,
+) -> Result<bool> {
+    match item {
+        search_tui::SearchTuiItem::Track { track, .. } => {
+            state.player.write().currently_playing_tracks_id = None;
+            client_pub.send(ClientRequest::Player(PlayerRequest::StartPlayback(
+                Playback::URIs(vec![track.id.into()], None),
+                None,
+            )))?;
+        }
+        search_tui::SearchTuiItem::Artist { artist, .. } => {
+            state.player.write().currently_playing_tracks_id = None;
+            client_pub.send(ClientRequest::Player(PlayerRequest::StartPlayback(
+                Playback::Context(ContextId::Artist(artist.id), None),
+                None,
+            )))?;
+        }
+        search_tui::SearchTuiItem::Album { album, .. } => {
+            state.player.write().currently_playing_tracks_id = None;
+            client_pub.send(ClientRequest::Player(PlayerRequest::StartPlayback(
+                Playback::Context(ContextId::Album(album.id), None),
+                None,
+            )))?;
+        }
+        search_tui::SearchTuiItem::Playlist { playlist, .. } if force_play_playlist => {
+            state.player.write().currently_playing_tracks_id = None;
+            client_pub.send(ClientRequest::Player(PlayerRequest::StartPlayback(
+                Playback::Context(ContextId::Playlist(playlist.id), None),
+                None,
+            )))?;
+        }
+        search_tui::SearchTuiItem::Playlist { playlist, .. } => {
+            client_pub.send(ClientRequest::GetContext(ContextId::Playlist(
+                playlist.id.clone_static(),
+            )))?;
+
+            let PageState::SearchTui { line_input, state } = ui.current_page_mut() else {
+                anyhow::bail!("expect a search tui page");
+            };
+            *line_input = LineInput::default();
+            state.mode = SearchTuiMode::Playlist {
+                playlist_id: playlist.id.clone_static(),
+                playlist_name: playlist.name,
+            };
+            state.focus = SearchTuiFocus::Results;
+            state.result_list = Default::default();
+            state.last_dispatched_query = None;
+            state.last_edited_at = Instant::now();
+        }
+    }
+
+    Ok(true)
+}
+
+fn radio_search_tui_item(
+    client_pub: &flume::Sender<ClientRequest>,
+    state: &SharedState,
+    ui: &mut UIStateGuard,
+) -> Result<bool> {
+    let selected = search_tui_selected(ui);
+    let (mode, query) = match ui.current_page() {
+        PageState::SearchTui { line_input, state } => (state.mode.clone(), line_input.get_text()),
+        _ => anyhow::bail!("expect a search tui page"),
+    };
+
+    let (seed_uri, seed_name) = {
+        let data = state.data.read();
+        match mode {
+            SearchTuiMode::Global => {
+                let items = search_tui::build_items(&data, &SearchTuiMode::Global, &query);
+                if selected >= items.len() {
+                    return Ok(false);
+                }
+                let item = items[selected].clone();
+                match item {
+                    search_tui::SearchTuiItem::Track { track, .. } => (track.id.uri(), track.name),
+                    search_tui::SearchTuiItem::Artist { artist, .. } => {
+                        (artist.id.uri(), artist.name)
+                    }
+                    search_tui::SearchTuiItem::Album { album, .. } => (album.id.uri(), album.name),
+                    search_tui::SearchTuiItem::Playlist { playlist, .. } => {
+                        (playlist.id.uri(), playlist.name)
+                    }
+                }
+            }
+            SearchTuiMode::Playlist { .. } => {
+                let tracks = search_tui::build_playlist_tracks(&data, &mode, &query);
+                if selected >= tracks.len() {
+                    return Ok(false);
+                }
+                let track = tracks[selected].clone();
+                (track.id.uri(), track.name)
+            }
+        }
+    };
+
+    super::handle_go_to_radio(&seed_uri, &seed_name, ui, client_pub)?;
+    Ok(true)
 }
 
 fn handle_action_for_library_page(

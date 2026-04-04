@@ -166,6 +166,17 @@ fn handle_page_change_event(
                 }
             }
         }
+        PageState::SearchTui { line_input, state } => {
+            let query = line_input.get_text();
+            if matches!(state.mode, crate::state::SearchTuiMode::Global)
+                && !query.is_empty()
+                && state.last_dispatched_query.as_deref() != Some(query.as_str())
+                && state.last_edited_at.elapsed() >= Duration::from_millis(250)
+            {
+                client_pub.send(ClientRequest::Search(query.clone()))?;
+                state.last_dispatched_query = Some(query);
+            }
+        }
         _ => {}
     }
 

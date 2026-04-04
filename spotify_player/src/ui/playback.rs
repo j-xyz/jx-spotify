@@ -1,7 +1,7 @@
 use super::{
     config, utils::construct_and_render_block, Alignment, Borders, Constraint, Frame, Gauge,
-    Layout, Line, LineGauge, Modifier, Paragraph, PlaybackMetadata, Rect, SharedState, Span, Style,
-    Text, UIStateGuard, Wrap,
+    Layout, Line, LineGauge, Modifier, PageType, Paragraph, PlaybackMetadata, Rect, SharedState,
+    Span, Style, Text, UIStateGuard, Wrap,
 };
 #[cfg(feature = "image")]
 use crate::state::ImageRenderInfo;
@@ -24,8 +24,24 @@ pub fn render_playback_window(
     ui: &mut UIStateGuard,
     rect: Rect,
 ) -> Rect {
-    let (rect, other_rect) = split_rect_for_playback_window(state, rect);
-    let rect = construct_and_render_block("Playback", &ui.theme, Borders::ALL, frame, rect);
+    let is_search_tui = ui.current_page().page_type() == PageType::SearchTui;
+    let (rect, other_rect) = if is_search_tui {
+        (rect, Rect::default())
+    } else {
+        split_rect_for_playback_window(state, rect)
+    };
+    let rect = if is_search_tui {
+        let chunks = Layout::vertical([Constraint::Length(1), Constraint::Fill(0)]).split(rect);
+        let line = Line::from(vec![
+            Span::styled("playback", ui.theme.page_desc()),
+            Span::raw(" "),
+            Span::styled("current device", ui.theme.playlist_desc()),
+        ]);
+        frame.render_widget(Paragraph::new(line).wrap(Wrap { trim: true }), chunks[0]);
+        chunks[1]
+    } else {
+        construct_and_render_block("Playback", &ui.theme, Borders::ALL, frame, rect)
+    };
 
     let player = state.player.read();
     if let Some(ref playback) = player.playback {
@@ -380,27 +396,52 @@ fn construct_playback_text(
             },
             "{metadata}" => {
                 let repeat_value = <&'static str>::from(playback.repeat_state).to_string();
-
                 let volume_value = if let Some(volume) = playback.mute_state {
                     format!("{volume}% (muted)")
                 } else {
                     format!("{}%", playback.volume.unwrap_or_default())
                 };
+                let active_value_style = ui.theme.page_desc().add_modifier(Modifier::BOLD);
+                let inactive_value_style = ui.theme.playback_metadata();
+                let label_style = ui.theme.playback_metadata();
 
-                let mut parts = vec![];
+                let mut metadata_spans = vec![];
+                let mut first = true;
 
                 for field in &configs.app_config.playback_metadata_fields {
-                    match field.as_str() {
-                        "repeat" => parts.push(format!("repeat: {repeat_value}")),
-                        "shuffle" => parts.push(format!("shuffle: {}", playback.shuffle_state)),
-                        "volume" => parts.push(format!("volume: {volume_value}")),
-                        "device" => parts.push(format!("device: {}", playback.device_name)),
-                        _ => {}
+                    let (label, value, enabled) = match field.as_str() {
+                        "repeat" => (
+                            "repeat",
+                            repeat_value.clone(),
+                            playback.repeat_state != rspotify::model::RepeatState::Off,
+                        ),
+                        "shuffle" => (
+                            "shuffle",
+                            playback.shuffle_state.to_string(),
+                            playback.shuffle_state,
+                        ),
+                        "volume" => ("volume", volume_value.clone(), true),
+                        "device" => ("device", playback.device_name.clone(), true),
+                        _ => continue,
+                    };
+
+                    if !first {
+                        metadata_spans.push(Span::styled(" | ", label_style));
                     }
+                    first = false;
+                    metadata_spans.push(Span::styled(format!("{label}: "), label_style));
+                    metadata_spans.push(Span::styled(
+                        value,
+                        if enabled {
+                            active_value_style
+                        } else {
+                            inactive_value_style
+                        },
+                    ));
                 }
 
-                let metadata_str = parts.join(" | ");
-                (metadata_str, ui.theme.playback_metadata())
+                spans.extend(metadata_spans);
+                continue;
             }
             _ => continue,
         };

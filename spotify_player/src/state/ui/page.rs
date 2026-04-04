@@ -1,8 +1,9 @@
 use crate::{
-    state::model::{Category, ContextId},
+    state::model::{Category, ContextId, PlaylistId},
     ui::single_line_input::LineInput,
 };
 use ratatui::widgets::{ListState, TableState};
+use std::time::Instant;
 
 #[derive(Clone, Debug)]
 pub enum PageState {
@@ -18,6 +19,10 @@ pub enum PageState {
         line_input: LineInput,
         current_query: String,
         state: SearchPageUIState,
+    },
+    SearchTui {
+        line_input: LineInput,
+        state: SearchTuiPageUIState,
     },
     Lyrics {
         track_uri: String,
@@ -43,6 +48,7 @@ pub enum PageType {
     Library,
     Context,
     Search,
+    SearchTui,
     Browse,
     Lyrics,
     Queue,
@@ -68,6 +74,30 @@ pub struct SearchPageUIState {
     pub show_list: ListState,
     pub episode_list: ListState,
     pub focus: SearchFocusState,
+}
+
+#[derive(Clone, Debug)]
+pub struct SearchTuiPageUIState {
+    pub result_list: TableState,
+    pub mode: SearchTuiMode,
+    pub focus: SearchTuiFocus,
+    pub last_dispatched_query: Option<String>,
+    pub last_edited_at: Instant,
+}
+
+#[derive(Clone, Debug)]
+pub enum SearchTuiMode {
+    Global,
+    Playlist {
+        playlist_id: PlaylistId<'static>,
+        playlist_name: String,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SearchTuiFocus {
+    Results,
+    Search,
 }
 
 #[derive(Clone, Debug)]
@@ -147,6 +177,7 @@ impl PageState {
             PageState::Library { .. } => PageType::Library,
             PageState::Context { .. } => PageType::Context,
             PageState::Search { .. } => PageType::Search,
+            PageState::SearchTui { .. } => PageType::SearchTui,
             PageState::Browse { .. } => PageType::Browse,
             PageState::Lyrics { .. } => PageType::Lyrics,
             PageState::Queue { .. } => PageType::Queue,
@@ -208,6 +239,16 @@ impl PageState {
                 SearchFocusState::Shows => Some(MutableWindowState::List(show_list)),
                 SearchFocusState::Episodes => Some(MutableWindowState::List(episode_list)),
             },
+            Self::SearchTui {
+                state:
+                    SearchTuiPageUIState {
+                        result_list, focus, ..
+                    },
+                ..
+            } => match focus {
+                SearchTuiFocus::Results => Some(MutableWindowState::Table(result_list)),
+                SearchTuiFocus::Search => None,
+            },
             Self::Context { state, .. } => state.as_mut().map(|state| match state {
                 ContextPageUIState::Tracks { track_table }
                 | ContextPageUIState::Playlist { track_table } => {
@@ -266,6 +307,18 @@ impl SearchPageUIState {
             show_list: ListState::default(),
             episode_list: ListState::default(),
             focus: SearchFocusState::Input,
+        }
+    }
+}
+
+impl SearchTuiPageUIState {
+    pub fn new() -> Self {
+        Self {
+            result_list: TableState::default(),
+            mode: SearchTuiMode::Global,
+            focus: SearchTuiFocus::Search,
+            last_dispatched_query: None,
+            last_edited_at: Instant::now(),
         }
     }
 }

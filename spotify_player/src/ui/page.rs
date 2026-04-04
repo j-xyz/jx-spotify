@@ -6,14 +6,19 @@ use std::{
 use chrono_humanize::HumanTime;
 use ratatui::text::Line;
 
-use crate::{state::Episode, utils::format_duration};
+use crate::{
+    search_tui,
+    state::{Episode, SearchTuiFocus, SearchTuiMode},
+    utils::format_duration,
+};
+use ratatui::widgets::Wrap;
 
 use super::{
     config, utils, utils::construct_and_render_block, Album, Alignment, Artist, ArtistFocusState,
-    Borders, BrowsePageUIState, Cell, Constraint, Context, ContextPageUIState, DataReadGuard,
-    Frame, Id, Layout, LibraryFocusState, MutableWindowState, Orientation, PageState, Paragraph,
-    PlaylistFolderItem, Rect, Row, SearchFocusState, SharedState, Style, Table, Text, Track,
-    UIStateGuard,
+    Block, Borders, BrowsePageUIState, Cell, Constraint, Context, ContextPageUIState,
+    DataReadGuard, Frame, Id, Layout, LibraryFocusState, Modifier, MutableWindowState, Orientation,
+    PageState, Paragraph, PlaylistFolderItem, Rect, Row, SearchFocusState, SharedState, Span,
+    Style, Table, Text, Track, UIStateGuard,
 };
 use crate::state::BidiDisplay;
 use crate::ui::utils::to_bidi_string;
@@ -250,6 +255,302 @@ pub fn render_search_page(
         n_episodes,
         &mut page_state.episode_list,
     );
+}
+
+pub fn render_search_tui_page(
+    is_active: bool,
+    frame: &mut Frame,
+    state: &SharedState,
+    ui: &mut UIStateGuard,
+    rect: Rect,
+) {
+    let data = state.data.read();
+
+    let (mode, line_input, focus) = match ui.current_page() {
+        PageState::SearchTui { state, line_input } => {
+            (state.mode.clone(), line_input.clone(), state.focus)
+        }
+        _ => return,
+    };
+
+    let query = line_input.get_text();
+    let (title, items): (&str, Vec<SearchTuiDisplayRow>) = match &mode {
+        SearchTuiMode::Global => (
+            "Search Results",
+            search_tui::build_items(&data, &mode, &query)
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+        ),
+        SearchTuiMode::Playlist { playlist_name, .. } => (
+            playlist_name.as_str(),
+            search_tui::build_playlist_tracks(&data, &mode, &query)
+                .into_iter()
+                .map(search_tui_playlist_row)
+                .collect::<Vec<_>>(),
+        ),
+    };
+
+    let chunks = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Length(2),
+        Constraint::Fill(0),
+        Constraint::Length(6),
+        Constraint::Length(1),
+        Constraint::Length(1),
+    ])
+    .split(rect);
+
+    let results_title = format!("{title}  {} items", items.len());
+    render_search_tui_label(
+        frame,
+        chunks[0],
+        &results_title,
+        focus == SearchTuiFocus::Results,
+        ui,
+    );
+    frame.render_widget(
+        Paragraph::new(search_tui_results_help(&mode, ui)).wrap(Wrap { trim: true }),
+        chunks[1],
+    );
+    render_search_tui_results(frame, chunks[2], items, is_active, focus, ui);
+    super::playback::render_playback_window(frame, state, ui, chunks[3]);
+
+    render_search_tui_search_header(frame, chunks[4], &mode, focus, ui);
+
+    let search_box_style = ui.theme.playback_progress_bar_unfilled();
+    frame.render_widget(Block::default().style(search_box_style), chunks[5]);
+    frame.render_widget(
+        line_input.widget(is_active && focus == SearchTuiFocus::Search),
+        chunks[5],
+    );
+}
+
+fn render_search_tui_label(
+    frame: &mut Frame,
+    rect: Rect,
+    title: &str,
+    is_active: bool,
+    ui: &UIStateGuard,
+) {
+    let title_style = if is_active {
+        ui.theme.page_desc()
+    } else {
+        ui.theme.playback_metadata()
+    };
+    frame.render_widget(
+        Paragraph::new(Span::styled(title.to_lowercase(), title_style)),
+        rect,
+    );
+}
+
+fn search_tui_help_style(ui: &UIStateGuard) -> Style {
+    let _ = ui;
+    Style::default()
+}
+
+fn search_tui_key_style(ui: &UIStateGuard) -> Style {
+    ui.theme.page_desc().add_modifier(Modifier::BOLD)
+}
+
+fn search_tui_results_help(mode: &SearchTuiMode, ui: &UIStateGuard) -> Line<'static> {
+    let plain = search_tui_help_style(ui);
+    let key = search_tui_key_style(ui);
+
+    match mode {
+        SearchTuiMode::Global => Line::from(vec![
+            Span::styled("Use ", plain),
+            Span::styled("Tab", key),
+            Span::styled(" to switch panes. In results: ", plain),
+            Span::styled("Enter", key),
+            Span::styled(" choose, ", plain),
+            Span::styled("p", key),
+            Span::styled(" play directly, ", plain),
+            Span::styled("r", key),
+            Span::styled(" open radio, ", plain),
+            Span::styled("/", key),
+            Span::styled(" jump to search.", plain),
+        ]),
+        SearchTuiMode::Playlist { .. } => Line::from(vec![
+            Span::styled("Use ", plain),
+            Span::styled("Tab", key),
+            Span::styled(" to switch panes. In results: ", plain),
+            Span::styled("Enter", key),
+            Span::styled(" plays in context, ", plain),
+            Span::styled("r", key),
+            Span::styled(" opens radio, ", plain),
+            Span::styled("/", key),
+            Span::styled(" jumps to search.", plain),
+        ]),
+    }
+}
+
+fn search_tui_search_help(mode: &SearchTuiMode, ui: &UIStateGuard) -> Line<'static> {
+    let plain = search_tui_help_style(ui);
+    let key = search_tui_key_style(ui);
+
+    match mode {
+        SearchTuiMode::Global => Line::from(vec![
+            Span::styled(
+                "Type to search recent tracks, playlists, and Spotify results. ",
+                plain,
+            ),
+            Span::styled("Enter", key),
+            Span::styled(" moves focus to results. ", plain),
+            Span::styled("Ctrl-C", key),
+            Span::styled(" quits.", plain),
+        ]),
+        SearchTuiMode::Playlist { .. } => Line::from(vec![
+            Span::styled("Type to filter the current playlist locally. ", plain),
+            Span::styled("Esc", key),
+            Span::styled(" returns to global search. ", plain),
+            Span::styled("Ctrl-C", key),
+            Span::styled(" quits.", plain),
+        ]),
+    }
+}
+
+fn render_search_tui_search_header(
+    frame: &mut Frame,
+    rect: Rect,
+    mode: &SearchTuiMode,
+    focus: SearchTuiFocus,
+    ui: &UIStateGuard,
+) {
+    let chunks = Layout::horizontal([Constraint::Length(10), Constraint::Fill(0)]).split(rect);
+    render_search_tui_label(
+        frame,
+        chunks[0],
+        "Search",
+        focus == SearchTuiFocus::Search,
+        ui,
+    );
+    frame.render_widget(
+        Paragraph::new(search_tui_search_help(mode, ui)).alignment(Alignment::Right),
+        chunks[1],
+    );
+}
+
+fn render_search_tui_results(
+    frame: &mut Frame,
+    rect: Rect,
+    items: Vec<SearchTuiDisplayRow>,
+    is_active: bool,
+    focus: SearchTuiFocus,
+    ui: &mut UIStateGuard,
+) {
+    frame.render_widget(Block::default().style(ui.theme.app()), rect);
+
+    let rows = items
+        .into_iter()
+        .map(|row| {
+            let main_style = if row.is_current {
+                ui.theme.current_playing()
+            } else {
+                Style::default()
+            };
+            let title_style = if row.playlist_title_bold {
+                main_style.add_modifier(Modifier::BOLD)
+            } else {
+                main_style
+            };
+            let mut left = vec![Span::styled(to_bidi_string(&row.title), title_style)];
+            if let Some(secondary) = row.secondary {
+                left.push(Span::raw(" | "));
+                left.push(Span::styled(
+                    to_bidi_string(&secondary),
+                    ui.theme.playlist_desc(),
+                ));
+            }
+            Row::new(vec![
+                Cell::from(Line::from(left)),
+                Cell::from(format!("{:>10}", row.kind))
+                    .style(ui.theme.playlist_desc().add_modifier(Modifier::ITALIC)),
+            ])
+        })
+        .collect::<Vec<_>>();
+    let len = rows.len();
+    let table = Table::new(rows, [Constraint::Fill(1), Constraint::Length(12)])
+        .column_spacing(1)
+        .row_highlight_style(if is_active && focus == SearchTuiFocus::Results {
+            ui.theme
+                .app()
+                .patch(ui.theme.playback_progress_bar_unfilled())
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        });
+
+    let PageState::SearchTui {
+        state: page_state, ..
+    } = ui.current_page_mut()
+    else {
+        return;
+    };
+    utils::render_table_window(frame, table, rect, len, &mut page_state.result_list);
+}
+
+#[derive(Debug)]
+struct SearchTuiDisplayRow {
+    title: String,
+    secondary: Option<String>,
+    kind: &'static str,
+    is_current: bool,
+    playlist_title_bold: bool,
+}
+
+impl From<search_tui::SearchTuiItem> for SearchTuiDisplayRow {
+    fn from(item: search_tui::SearchTuiItem) -> Self {
+        match item {
+            search_tui::SearchTuiItem::Track { track } => Self {
+                title: format!("{} - {}", track.display_name(), track.artists_info()),
+                secondary: Some(track.album_info()),
+                kind: "song",
+                is_current: false,
+                playlist_title_bold: false,
+            },
+            search_tui::SearchTuiItem::Artist { artist } => Self {
+                title: artist.name,
+                secondary: None,
+                kind: "artist",
+                is_current: false,
+                playlist_title_bold: false,
+            },
+            search_tui::SearchTuiItem::Album { album } => Self {
+                title: format!(
+                    "{} - {}",
+                    album.name,
+                    album
+                        .artists
+                        .iter()
+                        .map(|a| a.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                secondary: Some(album.year()),
+                kind: "album",
+                is_current: false,
+                playlist_title_bold: false,
+            },
+            search_tui::SearchTuiItem::Playlist { playlist } => Self {
+                title: playlist.name,
+                secondary: Some(playlist.owner.0),
+                kind: "playlist",
+                is_current: false,
+                playlist_title_bold: true,
+            },
+        }
+    }
+}
+
+fn search_tui_playlist_row(track: Track) -> SearchTuiDisplayRow {
+    SearchTuiDisplayRow {
+        title: format!("{} - {}", track.display_name(), track.artists_info()),
+        secondary: Some(track.album_info()),
+        kind: "song",
+        is_current: false,
+        playlist_title_bold: false,
+    }
 }
 
 pub fn render_context_page(

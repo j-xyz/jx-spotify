@@ -337,6 +337,7 @@ To enable [fuzzy search](https://en.wikipedia.org/wiki/Approximate_string_matchi
 - `get`: Get Spotify data (playlist/album/artist data, user's data, etc)
 - `playback`: Interact with the playback (start a playback, play-pause, next, etc)
 - `search`: Search spotify
+- `search-tui`: Launch a barebones search-first TUI
 - `connect`: Connect to a Spotify device
 - `like`: Like currently playing track
 - `authenticate`: Authenticate the application
@@ -348,6 +349,8 @@ For more details, run `spotify_player -h` or `spotify_player {command} -h`.
 
 - On first use, run `spotify_player authenticate` to authenticate the app.
 - CLI commands communicate with a client socket on port `client_port` (default: `8080`). If no instance is running, a new client is started, which may increase latency.
+- `spotify_player search-tui` starts a single-list, search-driven interface geared toward quick search, radio, and playlist drill-in flows.
+- In `search-tui`, `Tab` switches between the search box and results. In results, `Enter` chooses, `r` opens radio, `p` plays directly, `/` returns to search, and `Esc` clears the query or backs out of playlist mode.
 
 #### Scripting
 

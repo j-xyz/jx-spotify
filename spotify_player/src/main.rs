@@ -9,6 +9,7 @@ mod log_layer;
 #[cfg(feature = "media-control")]
 mod media_control;
 mod playlist_folders;
+mod search_tui;
 mod state;
 #[cfg(feature = "streaming")]
 mod streaming;
@@ -28,6 +29,7 @@ fn init_spotify(
     client_pub: &flume::Sender<client::ClientRequest>,
     client: &client::AppClient,
     state: &state::SharedState,
+    include_recently_played: bool,
 ) -> Result<()> {
     client.initialize_playback(state);
 
@@ -40,6 +42,11 @@ fn init_spotify(
         state::USER_LIKED_TRACKS_ID.to_owned(),
     )))?;
     client_pub.send(client::ClientRequest::GetUserSavedShows)?;
+    if include_recently_played {
+        client_pub.send(client::ClientRequest::GetContext(state::ContextId::Tracks(
+            state::USER_RECENTLY_PLAYED_TRACKS_ID.to_owned(),
+        )))?;
+    }
 
     Ok(())
 }
@@ -94,7 +101,7 @@ fn init_logging(
 }
 
 #[tokio::main]
-async fn start_app(state: &state::SharedState) -> Result<()> {
+async fn start_app(state: &state::SharedState, include_recently_played: bool) -> Result<()> {
     if !state.is_daemon {
         #[cfg(feature = "image")]
         {
@@ -146,7 +153,8 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
         .context("initialize new Spotify session")?;
 
     // initialize Spotify-related stuff
-    init_spotify(&client_pub, &client, state).context("Failed to initialize the Spotify data")?;
+    init_spotify(&client_pub, &client, state, include_recently_played)
+        .context("Failed to initialize the Spotify data")?;
 
     // client socket task (for handling CLI commands)
     tokio::task::spawn({
@@ -272,50 +280,59 @@ fn main() -> Result<()> {
         config::set_config(configs);
     }
 
-    match args.subcommand() {
-        None => {
-            // initialize the application's log
-            let log_folder = config::get_config()
-                .app_config
-                .log_folder
-                .as_deref()
-                .expect("log_folder is set");
+    let run_interactive_app = |search_tui_mode: bool| -> Result<()> {
+        // initialize the application's log
+        let log_folder = config::get_config()
+            .app_config
+            .log_folder
+            .as_deref()
+            .expect("log_folder is set");
 
-            let log_buffer: Arc<Mutex<VecDeque<String>>> =
-                Arc::new(Mutex::new(VecDeque::with_capacity(1000)));
+        let log_buffer: Arc<Mutex<VecDeque<String>>> =
+            Arc::new(Mutex::new(VecDeque::with_capacity(1000)));
 
-            init_logging(log_folder, log_buffer.clone())
-                .context("failed to initialize application's logging")?;
+        init_logging(log_folder, log_buffer.clone())
+            .context("failed to initialize application's logging")?;
 
-            tracing::info!("Application configuration initialized.");
+        tracing::info!("Application configuration initialized.");
 
-            let is_daemon;
+        let is_daemon;
 
-            #[cfg(feature = "daemon")]
-            {
-                is_daemon = args.get_flag("daemon");
-                if is_daemon {
-                    if cfg!(any(target_os = "macos", target_os = "windows"))
-                        && cfg!(feature = "media-control")
-                    {
-                        eprintln!("Running the application as a daemon on windows/macos with `media-control` feature enabled is not supported!");
-                        std::process::exit(1);
-                    }
-
-                    tracing::info!("Starting the application as a daemon...");
-                    let daemonize = daemonize::Daemonize::new();
-                    daemonize.start()?;
+        #[cfg(feature = "daemon")]
+        {
+            is_daemon = args.get_flag("daemon");
+            if is_daemon {
+                if cfg!(any(target_os = "macos", target_os = "windows"))
+                    && cfg!(feature = "media-control")
+                {
+                    eprintln!("Running the application as a daemon on windows/macos with `media-control` feature enabled is not supported!");
+                    std::process::exit(1);
                 }
-            }
 
-            #[cfg(not(feature = "daemon"))]
-            {
-                is_daemon = false;
+                tracing::info!("Starting the application as a daemon...");
+                let daemonize = daemonize::Daemonize::new();
+                daemonize.start()?;
             }
-
-            let state = std::sync::Arc::new(state::State::new(is_daemon, log_buffer));
-            start_app(&state)
         }
+
+        #[cfg(not(feature = "daemon"))]
+        {
+            is_daemon = false;
+        }
+
+        let state = std::sync::Arc::new(state::State::new(is_daemon, log_buffer));
+        if search_tui_mode {
+            state.ui.lock().history = vec![state::PageState::SearchTui {
+                line_input: ui::single_line_input::LineInput::default(),
+                state: state::SearchTuiPageUIState::new(),
+            }];
+        }
+        start_app(&state, search_tui_mode)
+    };
+
+    match args.subcommand() {
+        None => run_interactive_app(false),
+        Some(("search-tui", _)) => run_interactive_app(true),
         Some((cmd, args)) => cli::handle_cli_subcommand(cmd, args),
     }
 }
