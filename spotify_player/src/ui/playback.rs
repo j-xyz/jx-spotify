@@ -1,7 +1,7 @@
 use super::{
-    config, utils::construct_and_render_block, Alignment, Borders, Constraint, Frame, Gauge,
-    Layout, Line, LineGauge, Modifier, PageType, Paragraph, PlaybackMetadata, Rect, SharedState,
-    Span, Style, Text, UIStateGuard, Wrap,
+    config, utils, Alignment, Constraint, Frame, Gauge, Layout, Line, LineGauge, Modifier,
+    PageType, Paragraph, PlaybackMetadata, Rect, SharedState, Span, Style, Text, UIStateGuard,
+    Wrap,
 };
 #[cfg(feature = "image")]
 use crate::state::ImageRenderInfo;
@@ -24,26 +24,33 @@ pub fn render_playback_window(
     ui: &mut UIStateGuard,
     rect: Rect,
 ) -> Rect {
-    let is_search_tui = ui.current_page().page_type() == PageType::SearchTui;
-    let (rect, other_rect) = if is_search_tui {
+    let inline_playback = uses_inline_playback(ui);
+    let (rect, other_rect) = if inline_playback {
         (rect, Rect::default())
     } else {
         split_rect_for_playback_window(state, rect)
     };
-    let rect = if is_search_tui {
-        let chunks = Layout::vertical([Constraint::Length(1), Constraint::Fill(0)]).split(rect);
-        let line = Line::from(vec![
-            Span::styled("playback", ui.theme.page_desc()),
-            Span::raw(" "),
-            Span::styled("current device", ui.theme.playlist_desc()),
-        ]);
-        frame.render_widget(Paragraph::new(line).wrap(Wrap { trim: true }), chunks[0]);
-        chunks[1]
-    } else {
-        construct_and_render_block("Playback", &ui.theme, Borders::ALL, frame, rect)
-    };
-
     let player = state.player.read();
+
+    let rect = if inline_playback {
+        utils::render_panel(
+            frame,
+            &ui.theme,
+            rect,
+            "playback",
+            Some(playback_meta_line(ui, &player)),
+            true,
+        )
+    } else {
+        utils::render_panel(
+            frame,
+            &ui.theme,
+            rect,
+            "playback",
+            Some(playback_meta_line(ui, &player)),
+            true,
+        )
+    };
     if let Some(ref playback) = player.playback {
         if let Some(item) = &playback.item {
             // Carve off the visualization rows here, inside the active-playback
@@ -226,6 +233,25 @@ pub fn render_playback_window(
     }
 
     other_rect
+}
+
+pub fn uses_inline_playback(ui: &UIStateGuard) -> bool {
+    let page_type = ui.current_page().page_type();
+    page_type == PageType::SearchTui
+        || (page_type == PageType::CommandHelp
+            && ui.history.len() > 1
+            && ui.history[ui.history.len() - 2].page_type() == PageType::SearchTui)
+}
+
+fn playback_meta_line(ui: &UIStateGuard, player: &crate::state::PlayerState) -> Line<'static> {
+    let device_name = player
+        .playback
+        .as_ref()
+        .map(|playback| playback.device.name.clone())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "no active device".to_string());
+
+    Line::from(vec![Span::styled(device_name, ui.theme.playlist_desc())])
 }
 
 fn split_rect_for_progress_bar(rect: Rect) -> (Rect, Rect) {
@@ -569,20 +595,8 @@ fn split_rect_for_playback_window(state: &SharedState, rect: Rect) -> (Rect, Rec
     };
     let playback_width = (playback_width + num_lines) as u16;
 
-    match configs.app_config.layout.playback_window_position {
-        config::Position::Top => {
-            let chunks =
-                Layout::vertical([Constraint::Length(playback_width), Constraint::Fill(0)])
-                    .split(rect);
+    let chunks =
+        Layout::vertical([Constraint::Fill(0), Constraint::Length(playback_width)]).split(rect);
 
-            (chunks[0], chunks[1])
-        }
-        config::Position::Bottom => {
-            let chunks =
-                Layout::vertical([Constraint::Fill(0), Constraint::Length(playback_width)])
-                    .split(rect);
-
-            (chunks[1], chunks[0])
-        }
-    }
+    (chunks[1], chunks[0])
 }

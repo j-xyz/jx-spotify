@@ -16,8 +16,8 @@ use ratatui::widgets::Wrap;
 use super::{
     config, utils, Album, Alignment, Artist, ArtistFocusState, Block, BrowsePageUIState, Cell,
     Constraint, Context, ContextPageUIState, DataReadGuard, Frame, Id, Layout, LibraryFocusState,
-    Modifier, MutableWindowState, Orientation, PageState, Paragraph, PlaylistFolderItem, Rect, Row,
-    SearchFocusState, SharedState, Span, Style, Table, Text, Track, UIStateGuard,
+    Modifier, MutableWindowState, Orientation, PageState, PageType, Paragraph, PlaylistFolderItem,
+    Rect, Row, SearchFocusState, SharedState, Span, Style, Table, Text, Track, UIStateGuard,
 };
 use crate::state::BidiDisplay;
 use crate::ui::utils::to_bidi_string;
@@ -27,6 +27,22 @@ const COMMAND_TABLE_CONSTRAINTS: [Constraint; 3] = [
     Constraint::Percentage(25),
     Constraint::Percentage(50),
 ];
+
+struct HelpRow {
+    command: String,
+    shortcuts: String,
+    description: String,
+}
+
+impl Display for HelpRow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {} {}",
+            self.command, self.shortcuts, self.description
+        )
+    }
+}
 
 // UI codes to render a page.
 // A `render_*_page` function should follow (not strictly) the below steps
@@ -390,7 +406,9 @@ fn search_tui_results_help(mode: &SearchTuiMode, ui: &UIStateGuard) -> Line<'sta
             Span::styled("r", key),
             Span::styled(" radio, ", plain),
             Span::styled("/", key),
-            Span::styled(" search.", plain),
+            Span::styled(" search, ", plain),
+            Span::styled("Ctrl-G", key),
+            Span::styled(" home.", plain),
         ]),
         SearchTuiMode::Playlist { .. }
         | SearchTuiMode::Album { .. }
@@ -403,7 +421,9 @@ fn search_tui_results_help(mode: &SearchTuiMode, ui: &UIStateGuard) -> Line<'sta
             Span::styled("r", key),
             Span::styled(" radio, ", plain),
             Span::styled("/", key),
-            Span::styled(" search.", plain),
+            Span::styled(" search, ", plain),
+            Span::styled("Ctrl-G", key),
+            Span::styled(" home.", plain),
         ]),
     }
 }
@@ -425,6 +445,8 @@ fn search_tui_search_help(mode: &SearchTuiMode, ui: &UIStateGuard) -> Line<'stat
             Span::styled(" playlists. ", plain),
             Span::styled("Enter", key),
             Span::styled(" results. ", plain),
+            Span::styled("Ctrl-G", key),
+            Span::styled(" home. ", plain),
             Span::styled("Ctrl-C", key),
             Span::styled(" quits.", plain),
         ]),
@@ -434,6 +456,8 @@ fn search_tui_search_help(mode: &SearchTuiMode, ui: &UIStateGuard) -> Line<'stat
             Span::styled("Track filter. ", plain),
             Span::styled("Esc", key),
             Span::styled(" back. ", plain),
+            Span::styled("Ctrl-G", key),
+            Span::styled(" home. ", plain),
             Span::styled("Ctrl-C", key),
             Span::styled(" quits.", plain),
         ]),
@@ -1007,13 +1031,19 @@ pub fn render_lyrics_page(
     frame.render_widget(paragraph, chunks[1]);
 }
 
-pub fn render_commands_help_page(frame: &mut Frame, ui: &mut UIStateGuard, rect: Rect) {
+pub fn render_commands_help_page(
+    frame: &mut Frame,
+    state: &SharedState,
+    ui: &mut UIStateGuard,
+    rect: Rect,
+) {
     // 1. Get data
     let configs = config::get_config();
     let mut map = BTreeMap::new();
-    let keymaps = ui.search_filtered_items(&configs.keymap_config.keymaps);
-    keymaps
-        .into_iter()
+    configs
+        .keymap_config
+        .keymaps
+        .iter()
         .filter(|km| km.include_in_help_screen())
         .for_each(|km| {
             let v = map.entry(km.command);
@@ -1028,12 +1058,76 @@ pub fn render_commands_help_page(frame: &mut Frame, ui: &mut UIStateGuard, rect:
             }
         });
 
+    let source_page_type = if ui.history.len() > 1 {
+        ui.history[ui.history.len() - 2].page_type()
+    } else {
+        PageType::Library
+    };
+
+    let mut rows = map
+        .into_iter()
+        .map(|(command, keys)| HelpRow {
+            command: format!("{command:?}"),
+            shortcuts: format!("[{keys}]"),
+            description: command.desc().to_string(),
+        })
+        .collect::<Vec<_>>();
+
+    if source_page_type == PageType::SearchTui {
+        rows.extend([
+            HelpRow {
+                command: "SearchTuiSwitchPane".to_string(),
+                shortcuts: "[Tab], [S-Tab]".to_string(),
+                description: "switch between search and results".to_string(),
+            },
+            HelpRow {
+                command: "SearchTuiOpen".to_string(),
+                shortcuts: "[Enter]".to_string(),
+                description: "open selected result or play selected track in a drilled-in list"
+                    .to_string(),
+            },
+            HelpRow {
+                command: "SearchTuiPlayDirect".to_string(),
+                shortcuts: "[p]".to_string(),
+                description: "play the selected artist, album, or playlist directly".to_string(),
+            },
+            HelpRow {
+                command: "SearchTuiRadio".to_string(),
+                shortcuts: "[r]".to_string(),
+                description: "open radio for the selected item".to_string(),
+            },
+            HelpRow {
+                command: "SearchTuiFocusSearch".to_string(),
+                shortcuts: "[/]".to_string(),
+                description: "move focus to the search field".to_string(),
+            },
+            HelpRow {
+                command: "SearchTuiBackOrClear".to_string(),
+                shortcuts: "[Esc]".to_string(),
+                description: "clear, go back, or switch back to results when search is empty"
+                    .to_string(),
+            },
+            HelpRow {
+                command: "SearchTuiHome".to_string(),
+                shortcuts: "[C-g]".to_string(),
+                description: "return to a fresh global search view".to_string(),
+            },
+            HelpRow {
+                command: "SearchTuiQuit".to_string(),
+                shortcuts: "[C-c]".to_string(),
+                description: "quit the application".to_string(),
+            },
+        ]);
+    }
+
+    let rows = ui.search_filtered_items(&rows);
+
     let scroll_offset = match ui.current_page_mut() {
         PageState::CommandHelp {
             ref mut scroll_offset,
         } => {
-            if !map.is_empty() && *scroll_offset >= map.len() {
-                *scroll_offset = map.len() - 1;
+            if !rows.is_empty() && *scroll_offset >= rows.len() {
+                *scroll_offset = rows.len() - 1;
             }
             *scroll_offset
         }
@@ -1041,32 +1135,39 @@ pub fn render_commands_help_page(frame: &mut Frame, ui: &mut UIStateGuard, rect:
     };
 
     // 2. Construct the page's layout
-    let rect = utils::render_panel(
-        frame,
-        &ui.theme,
-        rect,
-        "commands",
-        Some(Line::from(format!("{} items", map.len()))),
-        true,
-    );
+    let rect = if super::playback::uses_inline_playback(ui) {
+        let chunks = Layout::vertical([Constraint::Fill(0), Constraint::Length(6)]).split(rect);
+        let rect = utils::render_panel(
+            frame,
+            &ui.theme,
+            chunks[0],
+            "commands",
+            Some(Line::from(format!("{} items", rows.len()))),
+            true,
+        );
+        super::playback::render_playback_window(frame, state, ui, chunks[1]);
+        rect
+    } else {
+        utils::render_panel(
+            frame,
+            &ui.theme,
+            rect,
+            "commands",
+            Some(Line::from(format!("{} items", rows.len()))),
+            true,
+        )
+    };
 
     // 3. Construct the page's widget
     let help_table = Table::new(
-        map.into_iter()
+        rows.into_iter()
             .skip(scroll_offset)
-            .enumerate()
-            .map(|(i, (command, keys))| {
+            .map(|row| {
                 Row::new(vec![
-                    Cell::from(format!("{command:?}")),
-                    Cell::from(format!("[{keys}]")),
-                    Cell::from(command.desc()),
+                    Cell::from(row.command.clone()),
+                    Cell::from(row.shortcuts.clone()),
+                    Cell::from(row.description.clone()),
                 ])
-                // adding alternating row colors
-                .style(if (i + scroll_offset) % 2 == 0 {
-                    ui.theme.secondary_row()
-                } else {
-                    ui.theme.app()
-                })
             })
             .collect::<Vec<_>>(),
         COMMAND_TABLE_CONSTRAINTS,

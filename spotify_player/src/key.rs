@@ -7,6 +7,7 @@ pub enum Key {
     None(KeyCode),
     Ctrl(KeyCode),
     Alt(KeyCode),
+    Super(KeyCode),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -73,6 +74,7 @@ impl Key {
             match c {
                 'C' => key.map(Key::Ctrl),
                 'M' => key.map(Key::Alt),
+                'D' => key.map(Key::Super),
                 _ => None,
             }
         } else {
@@ -130,6 +132,7 @@ impl std::fmt::Display for Key {
         match *self {
             Key::Ctrl(k) => write!(f, "C-{}", key_code_to_string(k)),
             Key::Alt(k) => write!(f, "M-{}", key_code_to_string(k)),
+            Key::Super(k) => write!(f, "D-{}", key_code_to_string(k)),
             Key::None(k) => write!(f, "{}", key_code_to_string(k)),
             Key::Unknown => write!(f, "unknown key"),
         }
@@ -186,6 +189,7 @@ impl From<KeyEvent> for Key {
             KeyModifiers::NONE => Key::None(event.code),
             KeyModifiers::ALT => Key::Alt(event.code),
             KeyModifiers::CONTROL => Key::Ctrl(event.code),
+            KeyModifiers::SUPER => Key::Super(event.code),
             _ => Key::Unknown,
         }
     }

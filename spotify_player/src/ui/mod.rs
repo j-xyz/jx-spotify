@@ -13,8 +13,8 @@ use ratatui::{
     style::{Modifier, Style},
     text::{Line, Span, Text},
     widgets::{
-        Block, BorderType, Borders, Cell, Gauge, LineGauge, List, ListItem, ListState, Paragraph,
-        Row, Table, TableState, Wrap,
+        Block, Cell, Gauge, LineGauge, List, ListItem, ListState, Paragraph, Row, Table,
+        TableState, Wrap,
     },
     Frame,
 };
@@ -109,7 +109,7 @@ fn render_application(frame: &mut Frame, state: &SharedState, ui: &mut UIStateGu
     // render playback window before other popups and windows to ensure nothing is rendered on top
     // of the playback window, which is to avoid "duplicated images" issue
     // See: https://github.com/aome510/spotify-player/issues/498
-    let rect = if ui.current_page().page_type() == PageType::SearchTui {
+    let rect = if playback::uses_inline_playback(ui) {
         rect
     } else {
         playback::render_playback_window(frame, state, ui, rect)
@@ -139,7 +139,7 @@ fn render_main_layout(
         PageType::Browse => page::render_browse_page(is_active, frame, state, ui, rect),
         PageType::Lyrics => page::render_lyrics_page(is_active, frame, state, ui, rect),
         PageType::Queue => page::render_queue_page(frame, state, ui, rect),
-        PageType::CommandHelp => page::render_commands_help_page(frame, ui, rect),
+        PageType::CommandHelp => page::render_commands_help_page(frame, state, ui, rect),
         PageType::Logs => page::render_logs_page(frame, state, ui, rect),
     }
 }

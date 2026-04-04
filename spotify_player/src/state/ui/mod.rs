@@ -65,6 +65,27 @@ impl UIState {
         self.popup = None;
     }
 
+    pub fn reset_search_tui_home(&mut self) -> bool {
+        let Some(search_tui_index) = self
+            .history
+            .iter()
+            .position(|page| matches!(page, PageState::SearchTui { .. }))
+        else {
+            return false;
+        };
+
+        self.history.truncate(search_tui_index + 1);
+        self.popup = None;
+
+        let PageState::SearchTui { line_input, state } = self.current_page_mut() else {
+            return false;
+        };
+
+        *line_input = crate::ui::single_line_input::LineInput::default();
+        *state = SearchTuiPageUIState::new();
+        true
+    }
+
     /// Return whether there exists a focused popup.
     ///
     /// Currently, only search popup is not focused when it's opened.

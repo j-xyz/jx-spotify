@@ -62,8 +62,6 @@ struct Palette {
 
 #[derive(Clone, Debug, Default, Deserialize)]
 struct ComponentStyle {
-    block_title: Option<Style>,
-    border: Option<Style>,
     playback_status: Option<Style>,
     playback_track: Option<Style>,
     playback_artists: Option<Style>,
@@ -194,22 +192,6 @@ impl Theme {
         } else {
             style::Style::default()
         }
-    }
-
-    pub fn block_title(&self) -> style::Style {
-        self.component_style
-            .block_title
-            .as_ref()
-            .unwrap_or(&Style::default().fg(StyleColor::Magenta))
-            .style(&self.palette)
-    }
-
-    pub fn border(&self) -> style::Style {
-        self.component_style
-            .border
-            .as_ref()
-            .unwrap_or(&Style::default())
-            .style(&self.palette)
     }
 
     pub fn playback_status(&self) -> style::Style {

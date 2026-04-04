@@ -225,7 +225,10 @@ fn handle_search_tui_escape(ui: &mut UIStateGuard) -> Result<bool> {
         state.last_edited_at = Instant::now();
         state.result_list = Default::default();
     } else {
-        state.focus = SearchTuiFocus::Search;
+        state.focus = match state.focus {
+            SearchTuiFocus::Search => SearchTuiFocus::Results,
+            SearchTuiFocus::Results => SearchTuiFocus::Search,
+        };
     }
 
     Ok(true)

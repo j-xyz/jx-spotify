@@ -1,57 +1,11 @@
 use super::{
-    config, Alignment, Block, BorderType, Borders, Constraint, Frame, Layout, Line, List, ListItem,
-    ListState, Paragraph, Rect, Span, Style, Table, TableState,
+    config, Alignment, Block, Constraint, Frame, Layout, Line, List, ListItem, ListState,
+    Paragraph, Rect, Span, Style, Table, TableState,
 };
 use unicode_bidi::BidiInfo;
 
-/// Construct and render a block.
-///
-/// This function should only be used to render a window's borders and its title.
-/// It returns the rectangle to render the inner widgets inside the block.
-pub fn construct_and_render_block(
-    title: &str,
-    theme: &config::Theme,
-    borders: Borders,
-    frame: &mut Frame,
-    rect: Rect,
-) -> Rect {
-    let mut title = title.to_string();
-
-    let configs = config::get_config();
-
-    let (borders, border_type) = match configs.app_config.border_type {
-        config::BorderType::Hidden | config::BorderType::Plain => (borders, BorderType::Plain),
-        config::BorderType::Rounded => (borders, BorderType::Rounded),
-        config::BorderType::Double => (borders, BorderType::Double),
-        config::BorderType::Thick => (borders, BorderType::Thick),
-    };
-
-    let mut block = Block::default()
-        .borders(borders)
-        .border_style(theme.border())
-        .border_type(border_type);
-
-    let inner_rect = block.inner(rect);
-
-    // Handle `BorderType::Hidden` after determining the inner rectangle
-    // `Hidden` border can be done by setting the borders to be `NONE`.
-    // NOTE: we want to handle the border after the inner rectangle computation,
-    // so that paddings between windows are properly determined.
-    if configs.app_config.border_type == config::BorderType::Hidden {
-        block = block.borders(Borders::NONE);
-        // add padding to the title to ensure the inner text is aligned with the title
-        title = format!(" {title}");
-    }
-
-    // Set `title` for the block
-    block = block.title(Span::styled(title, theme.block_title()));
-
-    frame.render_widget(block, rect);
-    inner_rect
-}
-
 pub fn panel_style(theme: &config::Theme) -> Style {
-    theme.app().patch(theme.playback_progress_bar_unfilled())
+    theme.app()
 }
 
 pub fn render_panel<'a>(
