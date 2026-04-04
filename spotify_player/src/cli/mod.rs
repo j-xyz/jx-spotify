@@ -7,6 +7,9 @@ use crate::utils::write_private_file;
 use rspotify::model::{AlbumId, ArtistId, Id, PlaylistId, TrackId};
 use serde::{Deserialize, Serialize};
 
+#[cfg(unix)]
+const MAX_STREAM_MESSAGE_SIZE: usize = 16 * 1024 * 1024;
+#[cfg(not(unix))]
 const MAX_REQUEST_SIZE: usize = 8192;
 const SOCKET_AUTH_TOKEN_FILE: &str = "client_auth_token";
 const SOCKET_FILE: &str = "client.sock";
@@ -170,7 +173,9 @@ impl ItemId {
 }
 
 pub fn load_or_create_socket_auth_token() -> anyhow::Result<String> {
-    let path = config::get_config().cache_folder.join(SOCKET_AUTH_TOKEN_FILE);
+    let path = config::get_config()
+        .cache_folder
+        .join(SOCKET_AUTH_TOKEN_FILE);
 
     match std::fs::read_to_string(&path) {
         Ok(token) => {
@@ -183,7 +188,11 @@ pub fn load_or_create_socket_auth_token() -> anyhow::Result<String> {
         Err(err) => return Err(err.into()),
     }
 
-    let token = format!("{:032x}{:032x}", rand::random::<u128>(), rand::random::<u128>());
+    let token = format!(
+        "{:032x}{:032x}",
+        rand::random::<u128>(),
+        rand::random::<u128>()
+    );
     write_private_file(&path, &token)?;
     Ok(token)
 }

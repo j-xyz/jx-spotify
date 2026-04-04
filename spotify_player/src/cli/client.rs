@@ -7,12 +7,14 @@ use std::{
 
 use anyhow::{Context as _, Result};
 use rand::seq::SliceRandom;
+#[cfg(unix)]
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::Instrument;
 
 use crate::{
     cli::Request,
     client::{AppClient, PlayerRequest},
-    config::{self, get_cache_folder_path},
+    config::get_cache_folder_path,
     state::{
         AlbumId, ArtistId, Context, ContextId, Id, PlayableId, Playback, PlaybackMetadata,
         PlaylistId, SharedState, TrackId,
@@ -21,20 +23,31 @@ use crate::{
 };
 use rspotify::prelude::{BaseClient, OAuthClient};
 
+#[cfg(not(unix))]
+use super::MAX_REQUEST_SIZE;
+#[cfg(unix)]
+use super::MAX_STREAM_MESSAGE_SIZE;
 use super::{
     Command, Deserialize, EditAction, GetRequest, IdOrName, ItemId, ItemType, Key, PlaylistCommand,
-    Response, Serialize, SocketRequest, MAX_REQUEST_SIZE,
+    Response, Serialize, SocketRequest,
 };
 
 #[cfg(unix)]
-type ClientSocket = tokio::net::UnixDatagram;
+type ClientSocket = tokio::net::UnixListener;
 #[cfg(not(unix))]
 type ClientSocket = tokio::net::UdpSocket;
 
-#[cfg(unix)]
-type ClientSocketAddr = tokio::net::unix::SocketAddr;
 #[cfg(not(unix))]
 type ClientSocketAddr = std::net::SocketAddr;
+
+#[cfg(not(unix))]
+const SOCKET_HANDSHAKE_REQUEST: &[u8] = b"\0";
+#[cfg(not(unix))]
+const SOCKET_HANDSHAKE_RESPONSE: &[u8] = b"\x01";
+#[cfg(not(unix))]
+const RESPONSE_CHUNK_CONTINUE: u8 = 0;
+#[cfg(not(unix))]
+const RESPONSE_CHUNK_FINAL: u8 = 1;
 
 pub async fn start_socket(
     client: &AppClient,
@@ -74,12 +87,9 @@ pub async fn start_socket(
                 }
             }
 
-            tracing::info!(
-                "Starting a client unix socket at {}",
-                socket_path.display()
-            );
+            tracing::info!("Starting a client unix socket at {}", socket_path.display());
 
-            match tokio::net::UnixDatagram::bind(&socket_path) {
+            match tokio::net::UnixListener::bind(&socket_path) {
                 Ok(socket) => {
                     #[cfg(unix)]
                     {
@@ -107,7 +117,7 @@ pub async fn start_socket(
 
         #[cfg(not(unix))]
         {
-            let configs = config::get_config();
+            let configs = crate::config::get_config();
             let port = configs.app_config.client_port;
             tracing::info!("Starting a client socket at 127.0.0.1:{port}");
 
@@ -123,20 +133,94 @@ pub async fn start_socket(
         }
     };
 
+    #[cfg(unix)]
+    {
+        start_unix_socket(client, state, socket_auth_token, socket).await;
+    }
+
+    #[cfg(not(unix))]
+    {
+        start_udp_socket(client, state, socket_auth_token, socket).await;
+    }
+}
+
+#[cfg(unix)]
+async fn start_unix_socket(
+    client: &AppClient,
+    state: Option<&SharedState>,
+    socket_auth_token: String,
+    socket: ClientSocket,
+) {
+    loop {
+        match socket.accept().await {
+            Err(err) => tracing::warn!("Failed to accept a client stream: {err:#}"),
+            Ok((mut stream, _addr)) => {
+                let request = match read_stream_request(&mut stream).await {
+                    Ok(request) => request,
+                    Err(err) => {
+                        tracing::error!("Cannot deserialize the socket request: {err:#}");
+                        continue;
+                    }
+                };
+
+                if request.auth_token != socket_auth_token {
+                    tracing::warn!("Rejected a socket request with an invalid auth token");
+                    write_stream_response(
+                        &mut stream,
+                        Response::Err(b"Unauthorized request".to_vec()),
+                    )
+                    .await
+                    .unwrap_or_default();
+                    continue;
+                }
+
+                let request = request.request;
+                let span = tracing::info_span!("socket_request", request = ?request);
+
+                async {
+                    let response = match handle_socket_request(client, state, request).await {
+                        Err(err) => {
+                            tracing::error!("Failed to handle socket request: {err:#}");
+                            let msg = format!("Bad request: {err:#}");
+                            Response::Err(msg.into_bytes())
+                        }
+                        Ok(data) => Response::Ok(data),
+                    };
+
+                    match write_stream_response(&mut stream, response).await {
+                        Ok(()) => tracing::info!("Successfully handled the socket request."),
+                        Err(err) => tracing::error!(
+                            "Failed to send the socket response back to the client: {err:#}"
+                        ),
+                    }
+                }
+                .instrument(span)
+                .await;
+            }
+        }
+    }
+}
+
+#[cfg(not(unix))]
+async fn start_udp_socket(
+    client: &AppClient,
+    state: Option<&SharedState>,
+    socket_auth_token: String,
+    socket: ClientSocket,
+) {
     let mut buf = [0; MAX_REQUEST_SIZE];
 
     loop {
         match socket.recv_from(&mut buf).await {
             Err(err) => tracing::warn!("Failed to receive from the socket: {err:#}"),
             Ok((n_bytes, dest_addr)) => {
-                if n_bytes == 0 {
-                    // received a connection request from the destination address
-                    #[cfg(unix)]
-                    if let Some(path) = dest_addr.as_pathname() {
-                        socket.send_to(&[], path).await.unwrap_or_default();
-                    }
-                    #[cfg(not(unix))]
-                    socket.send_to(&[], dest_addr).await.unwrap_or_default();
+                if n_bytes == SOCKET_HANDSHAKE_REQUEST.len()
+                    && &buf[..n_bytes] == SOCKET_HANDSHAKE_REQUEST
+                {
+                    socket
+                        .send_to(SOCKET_HANDSHAKE_RESPONSE, dest_addr)
+                        .await
+                        .unwrap_or_default();
                     continue;
                 }
 
@@ -152,7 +236,7 @@ pub async fn start_socket(
                     tracing::warn!(
                         "Rejected a socket request with an invalid auth token from {dest_addr:?}"
                     );
-                    send_response(
+                    send_udp_response(
                         Response::Err(b"Unauthorized request".to_vec()),
                         &socket,
                         dest_addr,
@@ -174,11 +258,12 @@ pub async fn start_socket(
                         }
                         Ok(data) => Response::Ok(data),
                     };
-                    send_response(response, &socket, dest_addr)
-                        .await
-                        .unwrap_or_default();
-
-                    tracing::info!("Successfully handled the socket request.",);
+                    match send_udp_response(response, &socket, dest_addr).await {
+                        Ok(()) => tracing::info!("Successfully handled the socket request."),
+                        Err(err) => tracing::error!(
+                            "Failed to send the socket response back to the client: {err:#}"
+                        ),
+                    }
                 }
                 .instrument(span)
                 .await;
@@ -187,7 +272,53 @@ pub async fn start_socket(
     }
 }
 
-async fn send_response(
+#[cfg(unix)]
+async fn read_stream_request(stream: &mut tokio::net::UnixStream) -> Result<SocketRequest> {
+    let data = read_stream_frame(stream).await?;
+    Ok(serde_json::from_slice(&data)?)
+}
+
+#[cfg(unix)]
+async fn read_stream_frame(stream: &mut tokio::net::UnixStream) -> Result<Vec<u8>> {
+    let mut len_buf = [0; 4];
+    stream.read_exact(&mut len_buf).await?;
+
+    let len = u32::from_be_bytes(len_buf) as usize;
+    if len > MAX_STREAM_MESSAGE_SIZE {
+        anyhow::bail!("socket frame exceeds the maximum allowed size");
+    }
+
+    let mut data = vec![0; len];
+    stream.read_exact(&mut data).await?;
+    Ok(data)
+}
+
+#[cfg(unix)]
+async fn write_stream_response(
+    stream: &mut tokio::net::UnixStream,
+    response: Response,
+) -> Result<()> {
+    let data = serde_json::to_vec(&response)?;
+    write_stream_frame(stream, &data).await?;
+    stream.shutdown().await?;
+    Ok(())
+}
+
+#[cfg(unix)]
+async fn write_stream_frame(stream: &mut tokio::net::UnixStream, data: &[u8]) -> Result<()> {
+    if data.len() > MAX_STREAM_MESSAGE_SIZE {
+        anyhow::bail!("socket frame exceeds the maximum allowed size");
+    }
+
+    let len = u32::try_from(data.len()).context("socket frame is too large to encode")?;
+    stream.write_all(&len.to_be_bytes()).await?;
+    stream.write_all(data).await?;
+    stream.flush().await?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+async fn send_udp_response(
     response: Response,
     socket: &ClientSocket,
     dest_addr: ClientSocketAddr,
@@ -196,27 +327,19 @@ async fn send_response(
 
     // as the result data can be large and may not be sent in a single UDP datagram,
     // split it into smaller chunks
-    for chunk in data.chunks(4096) {
-        #[cfg(unix)]
-        {
-            let Some(path) = dest_addr.as_pathname() else {
-                anyhow::bail!("unix socket peer has no pathname");
-            };
-            socket.send_to(chunk, path).await?;
-        }
-        #[cfg(not(unix))]
-        socket.send_to(chunk, dest_addr).await?;
+    let chunk_size = 1024;
+    let total_chunks = (data.len().saturating_add(chunk_size - 1) / chunk_size).max(1);
+    for (index, chunk) in data.chunks(chunk_size).enumerate() {
+        let mut framed_chunk = Vec::with_capacity(chunk.len() + 1);
+        framed_chunk.push(if index + 1 == total_chunks {
+            RESPONSE_CHUNK_FINAL
+        } else {
+            RESPONSE_CHUNK_CONTINUE
+        });
+        framed_chunk.extend_from_slice(chunk);
+
+        socket.send_to(&framed_chunk, dest_addr).await?;
     }
-    // send an empty buffer to indicate end of chunk
-    #[cfg(unix)]
-    {
-        let Some(path) = dest_addr.as_pathname() else {
-            anyhow::bail!("unix socket peer has no pathname");
-        };
-        socket.send_to(&[], path).await?;
-    }
-    #[cfg(not(unix))]
-    socket.send_to(&[], dest_addr).await?;
     Ok(())
 }
 

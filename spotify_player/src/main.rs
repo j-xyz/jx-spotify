@@ -153,7 +153,7 @@ async fn start_app(state: &state::SharedState) -> Result<()> {
         let client = client.clone();
         let state = state.clone();
         async move {
-            cli::start_socket(&client, Some(&state), None).await;
+            Box::pin(cli::start_socket(&client, Some(&state), None)).await;
         }
     });
 

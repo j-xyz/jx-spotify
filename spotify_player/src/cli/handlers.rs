@@ -1,31 +1,43 @@
 use crate::{auth::AuthConfig, client};
 
+#[cfg(not(unix))]
+use super::MAX_REQUEST_SIZE;
+#[cfg(unix)]
+use super::MAX_STREAM_MESSAGE_SIZE;
 use super::{
     config, init_cli, start_socket, AlbumId, Command, ContextType, EditAction, GetRequest,
     IdOrName, ItemType, Key, PlaylistCommand, PlaylistId, Request, Response, SocketRequest,
     TrackId,
-    MAX_REQUEST_SIZE,
 };
 use anyhow::{Context, Result};
 use clap::{ArgMatches, Id};
 use clap_complete::{generate, Shell};
+#[cfg(unix)]
+use std::{
+    io::{Read, Write},
+    time::Duration,
+};
 
 #[cfg(not(unix))]
 type ClientSocket = std::net::UdpSocket;
 
 #[cfg(unix)]
-struct ClientSocket {
-    socket: std::os::unix::net::UnixDatagram,
-    path: std::path::PathBuf,
-}
+type ClientSocket = std::os::unix::net::UnixStream;
+
+#[cfg(not(unix))]
+const SOCKET_HANDSHAKE_REQUEST: &[u8] = b"\0";
+#[cfg(not(unix))]
+const SOCKET_HANDSHAKE_RESPONSE: &[u8] = b"\x01";
+#[cfg(not(unix))]
+const RESPONSE_CHUNK_FINAL: u8 = 1;
 
 #[cfg(unix)]
-impl Drop for ClientSocket {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
-    }
+fn receive_response(socket: &mut ClientSocket) -> Result<Response> {
+    let data = read_stream_frame(socket)?;
+    Ok(serde_json::from_slice(&data)?)
 }
 
+#[cfg(not(unix))]
 fn receive_response(socket: &ClientSocket) -> Result<Response> {
     // read response from the server's socket, which can be split into
     // smaller chunks of data
@@ -37,13 +49,46 @@ fn receive_response(socket: &ClientSocket) -> Result<Response> {
         #[cfg(not(unix))]
         let (n_bytes, _) = socket.recv_from(&mut buf)?;
         if n_bytes == 0 {
-            // end of chunk
+            anyhow::bail!("received an empty socket response chunk");
+        }
+        let Some((&flags, payload)) = buf[..n_bytes].split_first() else {
+            anyhow::bail!("received a malformed socket response chunk");
+        };
+        data.extend_from_slice(payload);
+        if flags == RESPONSE_CHUNK_FINAL {
             break;
         }
-        data.extend_from_slice(&buf[..n_bytes]);
     }
 
     Ok(serde_json::from_slice(&data)?)
+}
+
+#[cfg(unix)]
+fn read_stream_frame(socket: &mut ClientSocket) -> Result<Vec<u8>> {
+    let mut len_buf = [0; 4];
+    socket.read_exact(&mut len_buf)?;
+
+    let len = u32::from_be_bytes(len_buf) as usize;
+    if len > MAX_STREAM_MESSAGE_SIZE {
+        anyhow::bail!("socket frame exceeds the maximum allowed size");
+    }
+
+    let mut data = vec![0; len];
+    socket.read_exact(&mut data)?;
+    Ok(data)
+}
+
+#[cfg(unix)]
+fn write_stream_frame(socket: &mut ClientSocket, data: &[u8]) -> Result<()> {
+    if data.len() > MAX_STREAM_MESSAGE_SIZE {
+        anyhow::bail!("socket frame exceeds the maximum allowed size");
+    }
+
+    let len = u32::try_from(data.len()).context("socket frame is too large to encode")?;
+    socket.write_all(&len.to_be_bytes())?;
+    socket.write_all(data)?;
+    socket.flush()?;
+    Ok(())
 }
 
 fn get_id_or_name(args: &ArgMatches) -> IdOrName {
@@ -158,65 +203,111 @@ fn handle_playback_subcommand(args: &ArgMatches) -> Result<Request> {
     Ok(Request::Playback(command))
 }
 
+#[cfg(not(unix))]
 /// Tries to connect to a running client, if exists, by sending a connection request
 /// to the client via a UDP socket.
 /// If no running client found, create a new client running in a separate thread to
 /// handle the socket request.
 fn try_connect_to_client(socket: &ClientSocket, configs: &config::Configs) -> Result<()> {
-    #[cfg(unix)]
-    let connect_result = socket.socket.connect(super::socket_path());
-    #[cfg(not(unix))]
-    let connect_result = socket.connect(("127.0.0.1", configs.app_config.client_port));
+    // send a handshake request to confirm the server is alive
+    let perform_handshake = || -> std::io::Result<(usize, [u8; 1])> {
+        socket.send(SOCKET_HANDSHAKE_REQUEST)?;
+        let mut buf = [0; 1];
+        Ok((socket.recv(&mut buf)?, buf))
+    };
 
-    let mut needs_spawn = false;
-    match connect_result {
-        Ok(()) => {}
+    let needs_spawn = false;
+
+    if needs_spawn {
+        spawn_client_socket_server(configs)?;
+    }
+
+    match perform_handshake() {
+        Err(err)
+            if matches!(
+                err.kind(),
+                std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::NotFound
+            ) =>
+        {
+            spawn_client_socket_server(configs)?;
+            let (n_bytes, buf) = perform_handshake()?;
+            if n_bytes != SOCKET_HANDSHAKE_RESPONSE.len()
+                || &buf[..n_bytes] != SOCKET_HANDSHAKE_RESPONSE
+            {
+                anyhow::bail!("received an invalid socket handshake response");
+            }
+        }
+        Err(err) => return Err(err.into()),
+        Ok((n_bytes, buf))
+            if n_bytes != SOCKET_HANDSHAKE_RESPONSE.len()
+                || &buf[..n_bytes] != SOCKET_HANDSHAKE_RESPONSE =>
+        {
+            anyhow::bail!("received an invalid socket handshake response");
+        }
+        Ok(_) => {}
+    }
+
+    Ok(())
+}
+
+#[cfg(unix)]
+fn connect_to_client(configs: &config::Configs) -> Result<ClientSocket> {
+    let socket_path = super::socket_path();
+
+    match connect_client_stream(&socket_path) {
+        Ok(stream) => Ok(stream),
         Err(err)
             if matches!(
                 err.kind(),
                 std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
             ) =>
         {
-            needs_spawn = true;
-        }
-        Err(err) => return Err(err.into()),
-    }
-
-    if needs_spawn {
-        spawn_client_socket_server(configs)?;
-        #[cfg(unix)]
-        socket.socket.connect(super::socket_path())?;
-        #[cfg(not(unix))]
-        socket.connect(("127.0.0.1", configs.app_config.client_port))?;
-    }
-
-    // send an empty buffer as a connection request to the client
-    #[cfg(unix)]
-    socket.socket.send(&[])?;
-    #[cfg(not(unix))]
-    socket.send(&[])?;
-
-    #[cfg(unix)]
-    let recv_result = socket.socket.recv(&mut [0; 1]);
-    #[cfg(not(unix))]
-    let recv_result = socket.recv(&mut [0; 1]);
-
-    if let Err(err) = recv_result {
-        if let std::io::ErrorKind::ConnectionRefused = err.kind() {
             spawn_client_socket_server(configs)?;
-            #[cfg(unix)]
-            socket.socket.connect(super::socket_path())?;
-            #[cfg(not(unix))]
-            socket.connect(("127.0.0.1", configs.app_config.client_port))?;
-        } else {
-            return Err(err.into());
+            connect_client_stream_with_retry(&socket_path)
         }
+        Err(err) => Err(err.into()),
     }
-
-    Ok(())
 }
 
-fn spawn_client_socket_server(configs: &config::Configs) -> Result<()> {
+#[cfg(unix)]
+fn connect_client_stream(path: &std::path::Path) -> std::io::Result<ClientSocket> {
+    let stream = std::os::unix::net::UnixStream::connect(path)?;
+    stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(3)))?;
+    Ok(stream)
+}
+
+#[cfg(unix)]
+fn connect_client_stream_with_retry(path: &std::path::Path) -> Result<ClientSocket> {
+    let mut last_err = None;
+
+    for _ in 0..20 {
+        match connect_client_stream(path) {
+            Ok(stream) => return Ok(stream),
+            Err(err)
+                if matches!(
+                    err.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
+                ) =>
+            {
+                last_err = Some(err);
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(err) => return Err(err.into()),
+        }
+    }
+
+    Err(last_err
+        .unwrap_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "timed out waiting for the client socket server",
+            )
+        })
+        .into())
+}
+
+fn spawn_client_socket_server(_configs: &config::Configs) -> Result<()> {
     // no running `spotify_player` instance found,
     // initialize a new client to handle the current CLI command
 
@@ -243,7 +334,7 @@ fn spawn_client_socket_server(configs: &config::Configs) -> Result<()> {
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
             Err(err) => return Err(err.into()),
         }
-        let socket = tokio::net::UnixDatagram::bind(&socket_path)?;
+        let socket = tokio::net::UnixListener::bind(&socket_path)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -255,7 +346,7 @@ fn spawn_client_socket_server(configs: &config::Configs) -> Result<()> {
     #[cfg(not(unix))]
     let client_socket = rt.block_on(tokio::net::UdpSocket::bind((
         "127.0.0.1",
-        configs.app_config.client_port,
+        _configs.app_config.client_port,
     )))?;
 
     // spawn a thread to handle the CLI request
@@ -264,30 +355,6 @@ fn spawn_client_socket_server(configs: &config::Configs) -> Result<()> {
     });
 
     Ok(())
-}
-
-#[cfg(unix)]
-fn create_client_socket(configs: &config::Configs) -> Result<ClientSocket> {
-    let socket_dir = configs.cache_folder.join("client-sockets");
-    crate::utils::ensure_private_dir(&socket_dir)?;
-
-    let socket_path = socket_dir.join(format!(
-        "client-{}-{:032x}.sock",
-        std::process::id(),
-        rand::random::<u128>()
-    ));
-
-    let socket = std::os::unix::net::UnixDatagram::bind(&socket_path)?;
-
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o600))?;
-    }
-
-    Ok(ClientSocket {
-        socket,
-        path: socket_path,
-    })
 }
 
 #[cfg(not(unix))]
@@ -321,9 +388,6 @@ pub fn handle_cli_subcommand(cmd: &str, args: &ArgMatches) -> Result<()> {
         _ => {}
     }
 
-    let socket = create_client_socket(configs)?;
-    try_connect_to_client(&socket, configs).context("try to connect to a client")?;
-
     // construct a socket request based on the CLI command and its arguments
     let request = match cmd {
         "get" => handle_get_subcommand(args),
@@ -347,14 +411,24 @@ pub fn handle_cli_subcommand(cmd: &str, args: &ArgMatches) -> Result<()> {
         auth_token: super::load_or_create_socket_auth_token()?,
         request,
     })?;
-    assert!(request_buf.len() <= MAX_REQUEST_SIZE);
-    #[cfg(unix)]
-    socket.socket.send(&request_buf)?;
-    #[cfg(not(unix))]
-    socket.send(&request_buf)?;
 
-    // receive and handle a response from the client's socket
-    match receive_response(&socket)? {
+    #[cfg(unix)]
+    let response = {
+        let mut socket = connect_to_client(configs).context("try to connect to a client")?;
+        write_stream_frame(&mut socket, &request_buf)?;
+        receive_response(&mut socket)?
+    };
+
+    #[cfg(not(unix))]
+    let response = {
+        let socket = create_client_socket(configs)?;
+        try_connect_to_client(&socket, configs).context("try to connect to a client")?;
+        assert!(request_buf.len() <= MAX_REQUEST_SIZE);
+        socket.send(&request_buf)?;
+        receive_response(&socket)?
+    };
+
+    match response {
         Response::Err(err) => {
             eprintln!("{}", String::from_utf8_lossy(&err));
             std::process::exit(1);
