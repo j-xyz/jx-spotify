@@ -351,7 +351,7 @@ For more details, run `spotify_player -h` or `spotify_player {command} -h`.
 - CLI commands communicate with a client socket on port `client_port` (default: `8080`). If no instance is running, a new client is started, which may increase latency.
 - `spotify_player search-tui` starts a single-list, search-driven interface geared toward quick search, radio, and playlist drill-in flows.
 - In `search-tui`, `Tab` switches between the search box and results. In results, `Enter` chooses, `r` opens radio, `p` plays directly, `/` returns to search, and `Esc` clears the query or backs out of playlist mode.
-- `search-tui` also supports inline quick filters: `!song` / `!album` / `!artist` / `!playlist`, `@artist`, `$album`, and `#genre`.
+- `search-tui` also supports inline type sigils: `!` for tracks, `@` for artists, `$` for albums, and `#` for playlists.
 
 #### Scripting
 

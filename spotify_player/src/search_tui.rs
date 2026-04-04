@@ -29,18 +29,12 @@ enum SearchTuiItemKind {
 enum SearchTuiQuerySection {
     General,
     Type,
-    Artist,
-    Album,
-    Genre,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct SearchTuiQuery {
     general_terms: Vec<String>,
     type_filters: Vec<SearchTuiItemKind>,
-    artist_filters: Vec<String>,
-    album_filters: Vec<String>,
-    genre_filters: Vec<String>,
 }
 
 impl SearchTuiQuery {
@@ -50,9 +44,10 @@ impl SearchTuiQuery {
         let mut buffer = String::new();
 
         for token in raw.split_whitespace() {
-            if let Some((new_section, rest)) = parse_sigil_token(token) {
+            if let Some((kind, rest)) = parse_sigil_token(token) {
                 query.push_fragment(section, &buffer);
-                section = new_section;
+                query.push_type_filter(kind);
+                section = SearchTuiQuerySection::Type;
                 buffer.clear();
                 if !rest.is_empty() {
                     buffer.push_str(rest);
@@ -70,12 +65,7 @@ impl SearchTuiQuery {
     }
 
     fn candidate_query(&self) -> String {
-        let mut parts = Vec::new();
-        parts.extend(self.general_terms.iter().cloned());
-        parts.extend(self.artist_filters.iter().cloned());
-        parts.extend(self.album_filters.iter().cloned());
-        parts.extend(self.genre_filters.iter().cloned());
-        parts.join(" ")
+        self.general_terms.join(" ")
     }
 
     fn matches_kind(&self, kind: SearchTuiItemKind) -> bool {
@@ -83,39 +73,17 @@ impl SearchTuiQuery {
     }
 
     fn matches_free_text(&self, text: &str) -> bool {
-        let query = self.general_terms.join(" ");
-        text_matches_query(&query, text)
+        text_matches_query(&self.candidate_query(), text)
     }
 
-    fn matches_field_filters(&self, filters: &[String], fields: &[String]) -> bool {
-        if filters.is_empty() {
-            return true;
-        }
-        if fields.is_empty() {
-            return false;
-        }
-
-        filters.iter().all(|filter| {
-            fields
-                .iter()
-                .any(|field| text_matches_query(filter, field.as_str()))
-        })
+    fn matches_item(&self, item: &SearchTuiItem) -> bool {
+        self.matches_kind(item.kind()) && self.matches_free_text(&item.search_text())
     }
 
-    fn matches_item(&self, data: &DataReadGuard, item: &SearchTuiItem) -> bool {
-        self.matches_kind(item.kind())
-            && self.matches_free_text(&item.search_text())
-            && self.matches_field_filters(&self.artist_filters, &item.artist_fields())
-            && self.matches_field_filters(&self.album_filters, &item.album_fields())
-            && self.matches_field_filters(&self.genre_filters, &item.genre_fields(data))
-    }
-
-    fn matches_track(&self, data: &DataReadGuard, track: &Track) -> bool {
-        self.matches_kind(SearchTuiItemKind::Track)
-            && self.matches_free_text(&track_search_text(track))
-            && self.matches_field_filters(&self.artist_filters, &track_artist_fields(track))
-            && self.matches_field_filters(&self.album_filters, &track_album_fields(track))
-            && self.matches_field_filters(&self.genre_filters, &track_genre_fields(data, track))
+    fn matches_context_track(&self, track: &Track) -> bool {
+        // Context drill-in is always a track list, so keep sigil text usable there
+        // by ignoring type-only narrowing and filtering on the query terms.
+        self.matches_free_text(&track_search_text(track))
     }
 
     fn push_fragment(&mut self, section: SearchTuiQuerySection, fragment: &str) {
@@ -124,21 +92,15 @@ impl SearchTuiQuery {
         };
 
         match section {
-            SearchTuiQuerySection::General => push_unique(&mut self.general_terms, fragment),
-            SearchTuiQuerySection::Artist => push_unique(&mut self.artist_filters, fragment),
-            SearchTuiQuerySection::Album => push_unique(&mut self.album_filters, fragment),
-            SearchTuiQuerySection::Genre => push_unique(&mut self.genre_filters, fragment),
-            SearchTuiQuerySection::Type => {
-                for token in fragment.split_whitespace() {
-                    if let Some(kind) = parse_item_kind(token) {
-                        if !self.type_filters.contains(&kind) {
-                            self.type_filters.push(kind);
-                        }
-                    } else if let Some(token) = normalize_fragment(token) {
-                        push_unique(&mut self.general_terms, token);
-                    }
-                }
+            SearchTuiQuerySection::General | SearchTuiQuerySection::Type => {
+                push_unique(&mut self.general_terms, fragment);
             }
+        }
+    }
+
+    fn push_type_filter(&mut self, kind: SearchTuiItemKind) {
+        if !self.type_filters.contains(&kind) {
+            self.type_filters.push(kind);
         }
     }
 }
@@ -176,35 +138,6 @@ impl SearchTuiItem {
             Self::Artist { artist } => artist.name.clone(),
             Self::Album { album } => album_search_text(album),
             Self::Playlist { playlist } => playlist_search_text(playlist),
-        }
-    }
-
-    fn artist_fields(&self) -> Vec<String> {
-        match self {
-            Self::Track { track } => track_artist_fields(track),
-            Self::Artist { artist } => vec![artist.name.clone()],
-            Self::Album { album } => album_artist_fields(album),
-            Self::Playlist { .. } => Vec::new(),
-        }
-    }
-
-    fn album_fields(&self) -> Vec<String> {
-        match self {
-            Self::Track { track } => track_album_fields(track),
-            Self::Artist { .. } => Vec::new(),
-            Self::Album { album } => vec![album.name.clone()],
-            Self::Playlist { .. } => Vec::new(),
-        }
-    }
-
-    fn genre_fields(&self, data: &DataReadGuard) -> Vec<String> {
-        match self {
-            Self::Track { track } => track_genre_fields(data, track),
-            Self::Artist { artist } => {
-                cached_genres_for_artist_names(data, std::iter::once(artist.name.as_str()))
-            }
-            Self::Album { album } => album_genre_fields(data, album),
-            Self::Playlist { .. } => Vec::new(),
         }
     }
 }
@@ -248,7 +181,7 @@ fn build_global_items(data: &DataReadGuard, query: &str) -> Vec<SearchTuiItem> {
             let item = SearchTuiItem::Track {
                 track: track.clone(),
             };
-            if parsed_query.matches_item(data, &item) {
+            if parsed_query.matches_item(&item) {
                 push_item(&mut items, &mut seen, item);
             }
             if items.len() >= RECENT_TRACK_LIMIT {
@@ -279,7 +212,7 @@ fn build_global_items(data: &DataReadGuard, query: &str) -> Vec<SearchTuiItem> {
         let item = SearchTuiItem::Playlist {
             playlist: playlist.clone(),
         };
-        if parsed_query.matches_item(data, &item) {
+        if parsed_query.matches_item(&item) {
             push_item(&mut items, &mut seen, item);
             playlist_count += 1;
         }
@@ -291,7 +224,6 @@ fn build_global_items(data: &DataReadGuard, query: &str) -> Vec<SearchTuiItem> {
 
     if let Some(results) = data.caches.search.get(&candidate_query) {
         push_remote_items(
-            data,
             &parsed_query,
             &mut items,
             &mut seen,
@@ -303,7 +235,6 @@ fn build_global_items(data: &DataReadGuard, query: &str) -> Vec<SearchTuiItem> {
             REMOTE_TRACK_LIMIT,
         );
         push_remote_items(
-            data,
             &parsed_query,
             &mut items,
             &mut seen,
@@ -315,7 +246,6 @@ fn build_global_items(data: &DataReadGuard, query: &str) -> Vec<SearchTuiItem> {
             REMOTE_ARTIST_LIMIT,
         );
         push_remote_items(
-            data,
             &parsed_query,
             &mut items,
             &mut seen,
@@ -327,7 +257,6 @@ fn build_global_items(data: &DataReadGuard, query: &str) -> Vec<SearchTuiItem> {
             REMOTE_ALBUM_LIMIT,
         );
         push_remote_items(
-            data,
             &parsed_query,
             &mut items,
             &mut seen,
@@ -344,7 +273,6 @@ fn build_global_items(data: &DataReadGuard, query: &str) -> Vec<SearchTuiItem> {
 }
 
 fn push_remote_items<I>(
-    data: &DataReadGuard,
     parsed_query: &SearchTuiQuery,
     items: &mut Vec<SearchTuiItem>,
     seen: &mut HashSet<String>,
@@ -358,7 +286,7 @@ fn push_remote_items<I>(
         if added >= limit {
             break;
         }
-        if parsed_query.matches_item(data, &item) {
+        if parsed_query.matches_item(&item) {
             let had_key = seen.contains(&item.key());
             push_item(items, seen, item);
             if !had_key {
@@ -376,7 +304,7 @@ pub fn build_context_tracks(data: &DataReadGuard, mode: &SearchTuiMode, query: &
     let parsed_query = SearchTuiQuery::parse(query);
     tracks
         .iter()
-        .filter(|track| parsed_query.matches_track(data, track))
+        .filter(|track| parsed_query.matches_context_track(track))
         .take(PLAYLIST_TRACK_LIMIT)
         .cloned()
         .collect()
@@ -404,23 +332,13 @@ fn context_tracks<'a>(data: &'a DataReadGuard, mode: &SearchTuiMode) -> Option<&
     }
 }
 
-fn parse_sigil_token(token: &str) -> Option<(SearchTuiQuerySection, &str)> {
+fn parse_sigil_token(token: &str) -> Option<(SearchTuiItemKind, &str)> {
     let (prefix, rest) = token.split_at(1);
     match prefix {
-        "!" => Some((SearchTuiQuerySection::Type, rest)),
-        "@" => Some((SearchTuiQuerySection::Artist, rest)),
-        "$" => Some((SearchTuiQuerySection::Album, rest)),
-        "#" => Some((SearchTuiQuerySection::Genre, rest)),
-        _ => None,
-    }
-}
-
-fn parse_item_kind(token: &str) -> Option<SearchTuiItemKind> {
-    match token.to_lowercase().as_str() {
-        "song" | "songs" | "track" | "tracks" => Some(SearchTuiItemKind::Track),
-        "album" | "albums" => Some(SearchTuiItemKind::Album),
-        "artist" | "artists" => Some(SearchTuiItemKind::Artist),
-        "playlist" | "playlists" => Some(SearchTuiItemKind::Playlist),
+        "!" => Some((SearchTuiItemKind::Track, rest)),
+        "@" => Some((SearchTuiItemKind::Artist, rest)),
+        "$" => Some((SearchTuiItemKind::Album, rest)),
+        "#" => Some((SearchTuiItemKind::Playlist, rest)),
         _ => None,
     }
 }
@@ -480,93 +398,47 @@ fn playlist_search_text(playlist: &Playlist) -> String {
     format!("{} {}", playlist.name, playlist.owner.0)
 }
 
-fn track_artist_fields(track: &Track) -> Vec<String> {
-    track
-        .artists
-        .iter()
-        .map(|artist| artist.name.clone())
-        .collect()
-}
-
-fn album_artist_fields(album: &crate::state::Album) -> Vec<String> {
-    album
-        .artists
-        .iter()
-        .map(|artist| artist.name.clone())
-        .collect()
-}
-
-fn track_album_fields(track: &Track) -> Vec<String> {
-    track
-        .album
-        .as_ref()
-        .map(|album| vec![album.name.clone()])
-        .unwrap_or_default()
-}
-
-fn track_genre_fields(data: &DataReadGuard, track: &Track) -> Vec<String> {
-    cached_genres_for_artist_names(
-        data,
-        track.artists.iter().map(|artist| artist.name.as_str()),
-    )
-}
-
-fn album_genre_fields(data: &DataReadGuard, album: &crate::state::Album) -> Vec<String> {
-    cached_genres_for_artist_names(
-        data,
-        album.artists.iter().map(|artist| artist.name.as_str()),
-    )
-}
-
-fn cached_genres_for_artist_names<'a, I>(data: &DataReadGuard, artist_names: I) -> Vec<String>
-where
-    I: IntoIterator<Item = &'a str>,
-{
-    let mut genres = Vec::new();
-    for artist_name in artist_names {
-        if let Some(cached_genres) = data.caches.genres.get(artist_name) {
-            for genre in cached_genres {
-                push_unique(&mut genres, genre.clone());
-            }
-        }
-    }
-    genres
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn parses_all_sigils() {
-        let query = SearchTuiQuery::parse("quiet !song @phoebe bridgers $punisher #indie");
+    fn parses_sigils_as_type_filters_with_embedded_terms() {
+        let query = SearchTuiQuery::parse("quiet !phoebe @bridgers $punisher #mix");
 
-        assert_eq!(query.general_terms, vec![String::from("quiet")]);
-        assert_eq!(query.type_filters, vec![SearchTuiItemKind::Track]);
-        assert_eq!(query.artist_filters, vec![String::from("phoebe bridgers")]);
-        assert_eq!(query.album_filters, vec![String::from("punisher")]);
-        assert_eq!(query.genre_filters, vec![String::from("indie")]);
+        assert_eq!(
+            query.general_terms,
+            vec![
+                String::from("quiet"),
+                String::from("phoebe"),
+                String::from("bridgers"),
+                String::from("punisher"),
+                String::from("mix"),
+            ]
+        );
+        assert_eq!(
+            query.type_filters,
+            vec![
+                SearchTuiItemKind::Track,
+                SearchTuiItemKind::Artist,
+                SearchTuiItemKind::Album,
+                SearchTuiItemKind::Playlist,
+            ]
+        );
     }
 
     #[test]
-    fn unknown_type_terms_fall_back_to_general_query() {
-        let query = SearchTuiQuery::parse("!mixtape @burial");
+    fn trailing_sigil_sets_type_filter_without_losing_existing_terms() {
+        let query = SearchTuiQuery::parse("halsey $");
 
-        assert!(query.type_filters.is_empty());
-        assert_eq!(query.general_terms, vec![String::from("mixtape")]);
-        assert_eq!(query.artist_filters, vec![String::from("burial")]);
+        assert_eq!(query.general_terms, vec![String::from("halsey")]);
+        assert_eq!(query.type_filters, vec![SearchTuiItemKind::Album]);
     }
 
     #[test]
     fn remote_candidate_query_uses_plain_terms_only() {
-        let query = remote_candidate_query(
-            &SearchTuiMode::Global,
-            "!song quiet @phoebe bridgers $punisher #indie",
-        );
+        let query = remote_candidate_query(&SearchTuiMode::Global, "!quiet @phoebe $punisher #mix");
 
-        assert_eq!(
-            query,
-            Some(String::from("quiet phoebe bridgers punisher indie"))
-        );
+        assert_eq!(query, Some(String::from("quiet phoebe punisher mix")));
     }
 }
