@@ -453,7 +453,9 @@ impl AppConfig {
     fn write_config_file(&self, path: &Path) -> Result<()> {
         toml::to_string_pretty(&self)
             .map_err(From::from)
-            .and_then(|content| write_private_file(&path.join(APP_CONFIG_FILE), &content).map_err(From::from))
+            .and_then(|content| {
+                write_private_file(&path.join(APP_CONFIG_FILE), &content).map_err(From::from)
+            })
     }
 
     pub fn session_config(&self) -> SessionConfig {

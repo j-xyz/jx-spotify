@@ -82,7 +82,10 @@ pub fn write_private_file(path: &Path, content: &str) -> io::Result<()> {
 }
 
 fn open_private_file(path: &Path, truncate: bool) -> io::Result<File> {
-    if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
         ensure_private_dir(parent)?;
     }
 
