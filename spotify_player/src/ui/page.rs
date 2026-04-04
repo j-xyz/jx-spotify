@@ -282,7 +282,9 @@ pub fn render_search_tui_page(
                 .map(Into::into)
                 .collect(),
         ),
-        SearchTuiMode::Playlist { title, .. } | SearchTuiMode::Album { title, .. } => (
+        SearchTuiMode::Playlist { title, .. }
+        | SearchTuiMode::Album { title, .. }
+        | SearchTuiMode::Artist { title, .. } => (
             title.as_str(),
             search_tui::build_context_tracks(&data, &mode, &query)
                 .into_iter()
@@ -371,7 +373,9 @@ fn search_tui_results_help(mode: &SearchTuiMode, ui: &UIStateGuard) -> Line<'sta
             Span::styled("/", key),
             Span::styled(" search.", plain),
         ]),
-        SearchTuiMode::Playlist { .. } | SearchTuiMode::Album { .. } => Line::from(vec![
+        SearchTuiMode::Playlist { .. }
+        | SearchTuiMode::Album { .. }
+        | SearchTuiMode::Artist { .. } => Line::from(vec![
             Span::styled("Use ", plain),
             Span::styled("Tab", key),
             Span::styled(" switch panes. ", plain),
@@ -405,7 +409,9 @@ fn search_tui_search_help(mode: &SearchTuiMode, ui: &UIStateGuard) -> Line<'stat
             Span::styled("Ctrl-C", key),
             Span::styled(" quits.", plain),
         ]),
-        SearchTuiMode::Playlist { .. } | SearchTuiMode::Album { .. } => Line::from(vec![
+        SearchTuiMode::Playlist { .. }
+        | SearchTuiMode::Album { .. }
+        | SearchTuiMode::Artist { .. } => Line::from(vec![
             Span::styled("Track filter. ", plain),
             Span::styled("Esc", key),
             Span::styled(" back. ", plain),

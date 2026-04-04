@@ -165,7 +165,9 @@ pub fn remote_candidate_query(mode: &SearchTuiMode, query: &str) -> Option<Strin
 pub fn build_items(data: &DataReadGuard, mode: &SearchTuiMode, query: &str) -> Vec<SearchTuiItem> {
     match mode {
         SearchTuiMode::Global => build_global_items(data, query),
-        SearchTuiMode::Playlist { .. } | SearchTuiMode::Album { .. } => Vec::new(),
+        SearchTuiMode::Playlist { .. }
+        | SearchTuiMode::Album { .. }
+        | SearchTuiMode::Artist { .. } => Vec::new(),
     }
 }
 
@@ -327,6 +329,14 @@ fn context_tracks<'a>(data: &'a DataReadGuard, mode: &SearchTuiMode) -> Option<&
             .get(&crate::state::ContextId::Album(album_id.clone()).uri())
         {
             Some(Context::Album { tracks, .. }) => Some(tracks.as_slice()),
+            _ => None,
+        },
+        SearchTuiMode::Artist { artist_id, .. } => match data
+            .caches
+            .context
+            .get(&crate::state::ContextId::Artist(artist_id.clone()).uri())
+        {
+            Some(Context::Artist { top_tracks, .. }) => Some(top_tracks.as_slice()),
             _ => None,
         },
     }

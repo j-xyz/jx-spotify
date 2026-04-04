@@ -184,7 +184,9 @@ fn handle_search_tui_input(key: Key, ui: &mut UIStateGuard) -> Option<bool> {
         return Some(
             if matches!(
                 state.mode,
-                SearchTuiMode::Playlist { .. } | SearchTuiMode::Album { .. }
+                SearchTuiMode::Playlist { .. }
+                    | SearchTuiMode::Album { .. }
+                    | SearchTuiMode::Artist { .. }
             ) {
                 reset_search_tui_to_global(line_input, state);
                 true
@@ -213,7 +215,7 @@ fn handle_search_tui_escape(ui: &mut UIStateGuard) -> Result<bool> {
 
     if matches!(
         state.mode,
-        SearchTuiMode::Playlist { .. } | SearchTuiMode::Album { .. }
+        SearchTuiMode::Playlist { .. } | SearchTuiMode::Album { .. } | SearchTuiMode::Artist { .. }
     ) {
         reset_search_tui_to_global(line_input, state);
     } else if !line_input.is_empty() {
@@ -247,7 +249,9 @@ fn search_tui_len(state: &SharedState, ui: &mut UIStateGuard) -> usize {
 
     match mode {
         SearchTuiMode::Global => search_tui::build_items(&data, mode, &query).len(),
-        SearchTuiMode::Playlist { .. } | SearchTuiMode::Album { .. } => {
+        SearchTuiMode::Playlist { .. }
+        | SearchTuiMode::Album { .. }
+        | SearchTuiMode::Artist { .. } => {
             search_tui::build_context_tracks(&data, mode, &query).len()
         }
     }
@@ -281,7 +285,9 @@ fn choose_search_tui_item(
             drop(data);
             play_or_open_search_tui_item(item, client_pub, state, ui, false)
         }
-        SearchTuiMode::Playlist { .. } | SearchTuiMode::Album { .. } => {
+        SearchTuiMode::Playlist { .. }
+        | SearchTuiMode::Album { .. }
+        | SearchTuiMode::Artist { .. } => {
             let tracks = search_tui::build_context_tracks(&data, &mode, &query);
             if selected >= tracks.len() {
                 return Ok(false);
@@ -300,6 +306,7 @@ fn choose_search_tui_item(
                     ContextId::Album(album_id.clone_static()),
                     Some(Offset::Uri(track.id.uri())),
                 ),
+                SearchTuiMode::Artist { .. } => Playback::URIs(vec![track.id.into()], None),
                 SearchTuiMode::Global => unreachable!("handled above"),
             };
             client_pub.send(ClientRequest::Player(PlayerRequest::StartPlayback(
@@ -333,7 +340,9 @@ fn play_search_tui_item(
             drop(data);
             play_or_open_search_tui_item(item, client_pub, state, ui, true)
         }
-        SearchTuiMode::Playlist { .. } | SearchTuiMode::Album { .. } => {
+        SearchTuiMode::Playlist { .. }
+        | SearchTuiMode::Album { .. }
+        | SearchTuiMode::Artist { .. } => {
             drop(data);
             choose_search_tui_item(client_pub, state, ui)
         }
@@ -355,12 +364,30 @@ fn play_or_open_search_tui_item(
                 None,
             )))?;
         }
-        search_tui::SearchTuiItem::Artist { artist, .. } => {
+        search_tui::SearchTuiItem::Artist { artist, .. } if force_play_context => {
             state.player.write().currently_playing_tracks_id = None;
             client_pub.send(ClientRequest::Player(PlayerRequest::StartPlayback(
                 Playback::Context(ContextId::Artist(artist.id), None),
                 None,
             )))?;
+        }
+        search_tui::SearchTuiItem::Artist { artist, .. } => {
+            client_pub.send(ClientRequest::GetContext(ContextId::Artist(
+                artist.id.clone_static(),
+            )))?;
+
+            let PageState::SearchTui { line_input, state } = ui.current_page_mut() else {
+                anyhow::bail!("expect a search tui page");
+            };
+            *line_input = LineInput::default();
+            state.mode = SearchTuiMode::Artist {
+                artist_id: artist.id.clone_static(),
+                title: artist.name,
+            };
+            state.focus = SearchTuiFocus::Results;
+            state.result_list = Default::default();
+            state.last_dispatched_query = None;
+            state.last_edited_at = Instant::now();
         }
         search_tui::SearchTuiItem::Album { album, .. } if force_play_context => {
             state.player.write().currently_playing_tracks_id = None;
@@ -448,7 +475,9 @@ fn radio_search_tui_item(
                     }
                 }
             }
-            SearchTuiMode::Playlist { .. } | SearchTuiMode::Album { .. } => {
+            SearchTuiMode::Playlist { .. }
+            | SearchTuiMode::Album { .. }
+            | SearchTuiMode::Artist { .. } => {
                 let tracks = search_tui::build_context_tracks(&data, &mode, &query);
                 if selected >= tracks.len() {
                     return Ok(false);
