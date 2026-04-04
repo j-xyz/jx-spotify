@@ -186,7 +186,9 @@ impl Theme {
                 .selection
                 .as_ref()
                 .unwrap_or(
-                    &Style::default().modifiers([StyleModifier::Reversed, StyleModifier::Bold]),
+                    &Style::default()
+                        .bg(StyleColor::BrightBlack)
+                        .modifiers([StyleModifier::Bold]),
                 )
                 .style(&self.palette)
         } else {

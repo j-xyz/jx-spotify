@@ -14,11 +14,10 @@ use crate::{
 use ratatui::widgets::Wrap;
 
 use super::{
-    config, utils, utils::construct_and_render_block, Album, Alignment, Artist, ArtistFocusState,
-    Block, Borders, BrowsePageUIState, Cell, Constraint, Context, ContextPageUIState,
-    DataReadGuard, Frame, Id, Layout, LibraryFocusState, Modifier, MutableWindowState, Orientation,
-    PageState, Paragraph, PlaylistFolderItem, Rect, Row, SearchFocusState, SharedState, Span,
-    Style, Table, Text, Track, UIStateGuard,
+    config, utils, Album, Alignment, Artist, ArtistFocusState, Block, BrowsePageUIState, Cell,
+    Constraint, Context, ContextPageUIState, DataReadGuard, Frame, Id, Layout, LibraryFocusState,
+    Modifier, MutableWindowState, Orientation, PageState, Paragraph, PlaylistFolderItem, Rect, Row,
+    SearchFocusState, SharedState, Span, Style, Table, Text, Track, UIStateGuard,
 };
 use crate::state::BidiDisplay;
 use crate::ui::utils::to_bidi_string;
@@ -65,7 +64,7 @@ pub fn render_search_page(
     let search_results = data.caches.search.get(current_query);
 
     // 2. Construct the page's layout
-    let rect = construct_and_render_block("Search", &ui.theme, Borders::ALL, frame, rect);
+    let rect = utils::render_panel(frame, &ui.theme, rect, "search", None, true);
 
     // search input's layout
     let chunks = Layout::vertical([Constraint::Length(1), Constraint::Fill(0)]).split(rect);
@@ -97,46 +96,6 @@ pub fn render_search_page(
             })
             .collect(),
     };
-
-    let track_rect = construct_and_render_block(
-        "Tracks",
-        &ui.theme,
-        if ui.orientation == Orientation::Horizontal {
-            Borders::TOP | Borders::RIGHT
-        } else {
-            Borders::TOP
-        },
-        frame,
-        chunks[0],
-    );
-    let album_rect =
-        construct_and_render_block("Albums", &ui.theme, Borders::TOP, frame, chunks[1]);
-    let artist_rect = construct_and_render_block(
-        "Artists",
-        &ui.theme,
-        if ui.orientation == Orientation::Horizontal {
-            Borders::TOP | Borders::RIGHT
-        } else {
-            Borders::TOP
-        },
-        frame,
-        chunks[2],
-    );
-    let playlist_rect =
-        construct_and_render_block("Playlists", &ui.theme, Borders::TOP, frame, chunks[3]);
-    let show_rect = construct_and_render_block(
-        "Shows",
-        &ui.theme,
-        if ui.orientation == Orientation::Horizontal {
-            Borders::TOP | Borders::RIGHT
-        } else {
-            Borders::TOP
-        },
-        frame,
-        chunks[4],
-    );
-    let episode_rect =
-        construct_and_render_block("Episodes", &ui.theme, Borders::TOP, frame, chunks[5]);
 
     // 3. Construct the page's widgets
     let (track_list, n_tracks) = {
@@ -197,6 +156,66 @@ pub fn render_search_page(
 
         utils::construct_list_widget(&ui.theme, episode_items, is_active)
     };
+
+    let search_input_rect = utils::render_panel(
+        frame,
+        &ui.theme,
+        search_input_rect,
+        "query",
+        Some(Line::from(format!(
+            "{} chars",
+            current_query.chars().count()
+        ))),
+        is_active && focus_state == SearchFocusState::Input,
+    );
+    let track_rect = utils::render_panel(
+        frame,
+        &ui.theme,
+        chunks[0],
+        "tracks",
+        Some(Line::from(format!("{n_tracks} items"))),
+        is_active && focus_state == SearchFocusState::Tracks,
+    );
+    let album_rect = utils::render_panel(
+        frame,
+        &ui.theme,
+        chunks[1],
+        "albums",
+        Some(Line::from(format!("{n_albums} items"))),
+        is_active && focus_state == SearchFocusState::Albums,
+    );
+    let artist_rect = utils::render_panel(
+        frame,
+        &ui.theme,
+        chunks[2],
+        "artists",
+        Some(Line::from(format!("{n_artists} items"))),
+        is_active && focus_state == SearchFocusState::Artists,
+    );
+    let playlist_rect = utils::render_panel(
+        frame,
+        &ui.theme,
+        chunks[3],
+        "playlists",
+        Some(Line::from(format!("{n_playlists} items"))),
+        is_active && focus_state == SearchFocusState::Playlists,
+    );
+    let show_rect = utils::render_panel(
+        frame,
+        &ui.theme,
+        chunks[4],
+        "shows",
+        Some(Line::from(format!("{n_shows} items"))),
+        is_active && focus_state == SearchFocusState::Shows,
+    );
+    let episode_rect = utils::render_panel(
+        frame,
+        &ui.theme,
+        chunks[5],
+        "episodes",
+        Some(Line::from(format!("{n_episodes} items"))),
+        is_active && focus_state == SearchFocusState::Episodes,
+    );
 
     // 4. Render the page's widgets
     // Render the query input box
@@ -582,12 +601,13 @@ pub fn render_context_page(
     };
 
     // 2. Construct the page's layout
-    let rect = construct_and_render_block(
-        &context_page_type.title(),
-        &ui.theme,
-        Borders::ALL,
+    let rect = utils::render_panel(
         frame,
+        &ui.theme,
         rect,
+        &context_page_type.title(),
+        None,
+        true,
     );
 
     // 3+4. Construct and render the page's widgets
@@ -729,31 +749,7 @@ pub fn render_library_page(
         ])
         .split(rect);
 
-    let playlist_rect = construct_and_render_block(
-        "Playlists",
-        &ui.theme,
-        match ui.orientation {
-            Orientation::Horizontal => Borders::TOP | Borders::LEFT | Borders::BOTTOM,
-            Orientation::Vertical => Borders::ALL,
-        },
-        frame,
-        chunks[0],
-    );
-    let album_rect = construct_and_render_block(
-        "Albums",
-        &ui.theme,
-        match ui.orientation {
-            Orientation::Horizontal => Borders::TOP | Borders::LEFT | Borders::BOTTOM,
-            Orientation::Vertical => Borders::ALL,
-        },
-        frame,
-        chunks[1],
-    );
-    let artist_rect =
-        construct_and_render_block("Artists", &ui.theme, Borders::ALL, frame, chunks[2]);
-
     // 3. Construct the page's widgets
-    // Construct the playlist window
     let items = ui
         .search_filtered_items(&data.user_data.folder_playlists_items(playlist_folder_id))
         .into_iter()
@@ -764,6 +760,47 @@ pub fn render_library_page(
             PlaylistFolderItem::Folder(f) => (f.to_bidi_string(), false),
         })
         .collect::<Vec<_>>();
+    let playlist_count = items.len();
+    let playlist_rect = utils::render_panel(
+        frame,
+        &ui.theme,
+        chunks[0],
+        "playlists",
+        Some(Line::from(format!("{playlist_count} items"))),
+        is_active
+            && focus_state != LibraryFocusState::SavedAlbums
+            && focus_state != LibraryFocusState::FollowedArtists,
+    );
+
+    let saved_albums = ui
+        .search_filtered_items(&data.user_data.saved_albums)
+        .into_iter()
+        .map(|a| (a.to_bidi_string(), curr_context_uri == Some(a.id.uri())))
+        .collect::<Vec<_>>();
+    let album_count = saved_albums.len();
+    let album_rect = utils::render_panel(
+        frame,
+        &ui.theme,
+        chunks[1],
+        "albums",
+        Some(Line::from(format!("{album_count} items"))),
+        is_active && focus_state == LibraryFocusState::SavedAlbums,
+    );
+
+    let followed_artists = ui
+        .search_filtered_items(&data.user_data.followed_artists)
+        .into_iter()
+        .map(|a| (a.to_bidi_string(), curr_context_uri == Some(a.id.uri())))
+        .collect::<Vec<_>>();
+    let artist_count = followed_artists.len();
+    let artist_rect = utils::render_panel(
+        frame,
+        &ui.theme,
+        chunks[2],
+        "artists",
+        Some(Line::from(format!("{artist_count} items"))),
+        is_active && focus_state == LibraryFocusState::FollowedArtists,
+    );
 
     let (playlist_list, n_playlists) = utils::construct_list_widget(
         &ui.theme,
@@ -775,19 +812,13 @@ pub fn render_library_page(
     // Construct the saved album window
     let (album_list, n_albums) = utils::construct_list_widget(
         &ui.theme,
-        ui.search_filtered_items(&data.user_data.saved_albums)
-            .into_iter()
-            .map(|a| (a.to_bidi_string(), curr_context_uri == Some(a.id.uri())))
-            .collect(),
+        saved_albums,
         is_active && focus_state == LibraryFocusState::SavedAlbums,
     );
     // Construct the followed artist window
     let (artist_list, n_artists) = utils::construct_list_widget(
         &ui.theme,
-        ui.search_filtered_items(&data.user_data.followed_artists)
-            .into_iter()
-            .map(|a| (a.to_bidi_string(), curr_context_uri == Some(a.id.uri())))
-            .collect(),
+        followed_artists,
         is_active && focus_state == LibraryFocusState::FollowedArtists,
     );
 
@@ -835,35 +866,53 @@ pub fn render_browse_page(
     let (list, len) = match ui.current_page() {
         PageState::Browse { state: ui_state } => match ui_state {
             BrowsePageUIState::CategoryList { .. } => {
-                rect =
-                    construct_and_render_block("Categories", &ui.theme, Borders::ALL, frame, rect);
-
-                utils::construct_list_widget(
+                let items = ui
+                    .search_filtered_items(&data.browse.categories)
+                    .into_iter()
+                    .map(|c| (c.name.clone(), false))
+                    .collect::<Vec<_>>();
+                let count = items.len();
+                rect = utils::render_panel(
+                    frame,
                     &ui.theme,
-                    ui.search_filtered_items(&data.browse.categories)
-                        .into_iter()
-                        .map(|c| (c.name.clone(), false))
-                        .collect(),
+                    rect,
+                    "categories",
+                    Some(Line::from(format!("{count} items"))),
                     is_active,
-                )
+                );
+
+                utils::construct_list_widget(&ui.theme, items, is_active)
             }
             BrowsePageUIState::CategoryPlaylistList { category, .. } => {
-                let title = format!("{} Playlists", category.name);
-                rect = construct_and_render_block(&title, &ui.theme, Borders::ALL, frame, rect);
-
                 let Some(playlists) = data.browse.category_playlists.get(&category.id) else {
+                    let rect = utils::render_panel(
+                        frame,
+                        &ui.theme,
+                        rect,
+                        &format!("{} playlists", category.name),
+                        None,
+                        is_active,
+                    );
                     frame.render_widget(Paragraph::new("Loading..."), rect);
                     return;
                 };
-
-                utils::construct_list_widget(
+                let items = ui
+                    .search_filtered_items(playlists)
+                    .into_iter()
+                    .map(|c| (c.name.clone(), false))
+                    .collect::<Vec<_>>();
+                let count = items.len();
+                let title = format!("{} playlists", category.name);
+                rect = utils::render_panel(
+                    frame,
                     &ui.theme,
-                    ui.search_filtered_items(playlists)
-                        .into_iter()
-                        .map(|c| (c.name.clone(), false))
-                        .collect(),
+                    rect,
+                    &title,
+                    Some(Line::from(format!("{count} items"))),
                     is_active,
-                )
+                );
+
+                utils::construct_list_widget(&ui.theme, items, is_active)
             }
         },
         _ => return,
@@ -888,7 +937,7 @@ pub fn render_lyrics_page(
     let data = state.data.read();
 
     // 2. Construct the page's layout
-    let rect = construct_and_render_block("Lyrics", &ui.theme, Borders::ALL, frame, rect);
+    let rect = utils::render_panel(frame, &ui.theme, rect, "lyrics", None, true);
     let chunks = Layout::vertical([Constraint::Length(2), Constraint::Fill(0)]).split(rect);
 
     // 3. Construct the page's widgets
@@ -992,7 +1041,14 @@ pub fn render_commands_help_page(frame: &mut Frame, ui: &mut UIStateGuard, rect:
     };
 
     // 2. Construct the page's layout
-    let rect = construct_and_render_block("Commands", &ui.theme, Borders::ALL, frame, rect);
+    let rect = utils::render_panel(
+        frame,
+        &ui.theme,
+        rect,
+        "commands",
+        Some(Line::from(format!("{} items", map.len()))),
+        true,
+    );
 
     // 3. Construct the page's widget
     let help_table = Table::new(
@@ -1063,24 +1119,38 @@ pub fn render_queue_page(
 
     // 1. Get data
     let player = state.player.read();
-    let queue = match player.queue {
-        Some(ref q) => &q.queue,
-        None => return,
-    };
+    let queue = player.queue.as_ref().map(|q| &q.queue);
     let scroll_offset = match ui.current_page_mut() {
         PageState::Queue {
             ref mut scroll_offset,
         } => {
-            if !queue.is_empty() && *scroll_offset >= queue.len() {
-                *scroll_offset = queue.len() - 1;
+            if let Some(queue) = queue {
+                if !queue.is_empty() && *scroll_offset >= queue.len() {
+                    *scroll_offset = queue.len() - 1;
+                }
             }
             *scroll_offset
         }
         _ => return,
     };
 
-    // 2. Construct the page's layout
-    let rect = construct_and_render_block("Queue", &ui.theme, Borders::ALL, frame, rect);
+    let queue_len = queue.map_or(0, Vec::len);
+    let rect = utils::render_panel(
+        frame,
+        &ui.theme,
+        rect,
+        "queue",
+        Some(Line::from(format!("{queue_len} items"))),
+        true,
+    );
+
+    let Some(queue) = queue else {
+        frame.render_widget(
+            Paragraph::new("Queue is empty").style(ui.theme.playback_metadata()),
+            rect,
+        );
+        return;
+    };
 
     // 3. Construct the page's widget
     let queue_table = Table::new(
@@ -1095,6 +1165,11 @@ pub fn render_queue_page(
                     Cell::from(get_playable_artists(x)),
                     Cell::from(get_playable_duration(x)),
                 ])
+                .style(if (i + scroll_offset) % 2 == 0 {
+                    ui.theme.secondary_row()
+                } else {
+                    Style::default()
+                })
             })
             .collect::<Vec<_>>(),
         [
@@ -1150,23 +1225,29 @@ fn render_artist_context_page_windows(
     // top tracks window
     let chunks = Layout::vertical([Constraint::Fill(1), Constraint::Fill(1)]).split(rect);
     let top_tracks_rect = chunks[0];
+    let is_albums_active = is_active && focus_state == ArtistFocusState::Albums;
 
     // albums and related artitsts windows
     let chunks = Layout::horizontal([Constraint::Ratio(1, 2); 2]).split(chunks[1]);
-    let albums_rect = construct_and_render_block(
-        "Albums",
-        &ui.theme,
-        Borders::TOP | Borders::RIGHT,
+    let albums_rect = utils::render_panel(
         frame,
+        &ui.theme,
         chunks[0],
+        "albums",
+        Some(Line::from(format!("{} items", albums.len()))),
+        is_albums_active,
     );
-    let related_artists_rect =
-        construct_and_render_block("Related Artists", &ui.theme, Borders::TOP, frame, chunks[1]);
+    let related_artists_rect = utils::render_panel(
+        frame,
+        &ui.theme,
+        chunks[1],
+        "related artists",
+        Some(Line::from(format!("{} items", artists.len()))),
+        is_active && focus_state == ArtistFocusState::RelatedArtists,
+    );
 
     // 3. Construct the page's widgets
     // album table
-
-    let is_albums_active = is_active && focus_state == ArtistFocusState::Albums;
     let n_albums = albums.len();
     let album_rows = albums
         .into_iter()
@@ -1214,6 +1295,14 @@ fn render_artist_context_page_windows(
     };
 
     // 4. Render the page's widgets
+    let top_tracks_rect = utils::render_panel(
+        frame,
+        &ui.theme,
+        top_tracks_rect,
+        "top tracks",
+        Some(Line::from(format!("{} items", tracks.len()))),
+        is_active && focus_state == ArtistFocusState::TopTracks,
+    );
     render_track_table(
         frame,
         top_tracks_rect,
@@ -1470,7 +1559,14 @@ fn render_episode_table(
 }
 
 pub fn render_logs_page(frame: &mut Frame, state: &SharedState, ui: &mut UIStateGuard, rect: Rect) {
-    let rect = construct_and_render_block("Logs", &ui.theme, Borders::ALL, frame, rect);
+    let rect = utils::render_panel(
+        frame,
+        &ui.theme,
+        rect,
+        "logs",
+        Some(Line::from("most recent first visible by scroll")),
+        true,
+    );
 
     let logs = state.logs.lock();
     let scroll_offset = match ui.current_page_mut() {

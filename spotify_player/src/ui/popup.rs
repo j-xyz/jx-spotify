@@ -1,9 +1,8 @@
 use crate::{command::Command, utils::filtered_items_from_query};
 
 use super::{
-    config, utils, utils::construct_and_render_block, Borders, Cell, Constraint, Frame, Layout,
-    Paragraph, PlaylistCreateCurrentField, PlaylistPopupAction, PopupState, Rect, Row, SharedState,
-    Table, UIStateGuard,
+    config, utils, Cell, Constraint, Frame, Layout, Line, Paragraph, PlaylistCreateCurrentField,
+    PlaylistPopupAction, PopupState, Rect, Row, SharedState, Table, UIStateGuard,
 };
 
 const SHORTCUT_TABLE_N_COLUMNS: usize = 3;
@@ -36,20 +35,22 @@ pub fn render_popup(
                     Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
                         .split(chunks[1]);
 
-                let name_input = construct_and_render_block(
-                    "Enter Name for New Playlist:",
-                    &ui.theme,
-                    Borders::ALL,
+                let name_input = utils::render_panel(
                     frame,
+                    &ui.theme,
                     popup_chunks[0],
+                    "playlist name",
+                    None,
+                    true,
                 );
 
-                let desc_input = construct_and_render_block(
-                    "Enter Description for New Playlist:",
-                    &ui.theme,
-                    Borders::ALL,
+                let desc_input = utils::render_panel(
                     frame,
+                    &ui.theme,
                     popup_chunks[1],
+                    "description",
+                    None,
+                    true,
                 );
 
                 frame.render_widget(
@@ -64,11 +65,8 @@ pub fn render_popup(
             }
             PopupState::Search { query } => {
                 let chunks =
-                    Layout::vertical([Constraint::Fill(0), Constraint::Length(3)]).split(rect);
-
-                let rect =
-                    construct_and_render_block("Search", &ui.theme, Borders::ALL, frame, chunks[1]);
-
+                    Layout::vertical([Constraint::Fill(0), Constraint::Length(2)]).split(rect);
+                let rect = utils::render_panel(frame, &ui.theme, chunks[1], "search", None, true);
                 frame.render_widget(Paragraph::new(format!("/{query}")), rect);
                 (chunks[0], true)
             }
@@ -143,23 +141,22 @@ pub fn render_popup(
                     .collect();
 
                 let chunks = Layout::vertical([
-                    Constraint::Length(3),
+                    Constraint::Length(2),
                     Constraint::Fill(0),
                     Constraint::Length(10),
                 ])
                 .split(rect);
 
-                // Render search input
-                let search_rect = construct_and_render_block(
-                    "Search Playlists (type to search, backspace on empty to close)",
-                    &ui.theme,
-                    Borders::ALL,
+                let search_rect = utils::render_panel(
                     frame,
+                    &ui.theme,
                     chunks[0],
+                    "playlist filter",
+                    Some(Line::from("Backspace closes")),
+                    true,
                 );
-                frame.render_widget(Paragraph::new(format!("🔍 {search_query}")), search_rect);
+                frame.render_widget(Paragraph::new(search_query.clone()), search_rect);
 
-                // Render filtered playlist list
                 let rect =
                     render_list_popup(frame, chunks[2], "User Playlists", display_items, 10, ui);
                 (rect, false)
@@ -211,7 +208,7 @@ fn render_list_popup(
 ) -> Rect {
     let chunks = Layout::vertical([Constraint::Fill(0), Constraint::Length(length)]).split(rect);
 
-    let rect = construct_and_render_block(title, &ui.theme, Borders::ALL, frame, chunks[1]);
+    let rect = utils::render_panel(frame, &ui.theme, chunks[1], title, None, true);
     let (list, len) = utils::construct_list_widget(&ui.theme, items, true);
 
     utils::render_list_window(
@@ -256,8 +253,7 @@ pub fn render_shortcut_help_popup(frame: &mut Frame, ui: &mut UIStateGuard, rect
     } else {
         let chunks = Layout::vertical([Constraint::Fill(0), Constraint::Length(7)]).split(rect);
 
-        let rect =
-            construct_and_render_block("Shortcuts", &ui.theme, Borders::ALL, frame, chunks[1]);
+        let rect = utils::render_panel(frame, &ui.theme, chunks[1], "shortcuts", None, true);
 
         let help_table = Table::new(
             matches

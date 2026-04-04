@@ -1,6 +1,6 @@
 use super::{
-    config, Block, BorderType, Borders, Frame, List, ListItem, ListState, Rect, Span, Style, Table,
-    TableState,
+    config, Alignment, Block, BorderType, Borders, Constraint, Frame, Layout, Line, List, ListItem,
+    ListState, Paragraph, Rect, Span, Style, Table, TableState,
 };
 use unicode_bidi::BidiInfo;
 
@@ -48,6 +48,50 @@ pub fn construct_and_render_block(
 
     frame.render_widget(block, rect);
     inner_rect
+}
+
+pub fn panel_style(theme: &config::Theme) -> Style {
+    theme.app().patch(theme.playback_progress_bar_unfilled())
+}
+
+pub fn render_panel<'a>(
+    frame: &mut Frame,
+    theme: &config::Theme,
+    rect: Rect,
+    title: &str,
+    meta: Option<Line<'a>>,
+    is_active: bool,
+) -> Rect {
+    frame.render_widget(Block::default().style(panel_style(theme)), rect);
+
+    let chunks = Layout::vertical([Constraint::Length(1), Constraint::Fill(0)]).split(rect);
+    render_section_header(frame, theme, chunks[0], title, meta, is_active);
+    chunks[1]
+}
+
+pub fn render_section_header<'a>(
+    frame: &mut Frame,
+    theme: &config::Theme,
+    rect: Rect,
+    title: &str,
+    meta: Option<Line<'a>>,
+    is_active: bool,
+) {
+    let title_style = if is_active {
+        theme.page_desc()
+    } else {
+        theme.playback_metadata()
+    };
+    let title_width = title.len() as u16 + 2;
+    let chunks =
+        Layout::horizontal([Constraint::Length(title_width), Constraint::Fill(0)]).split(rect);
+    frame.render_widget(
+        Paragraph::new(Span::styled(title.to_lowercase(), title_style)),
+        chunks[0],
+    );
+    if let Some(meta) = meta {
+        frame.render_widget(Paragraph::new(meta).alignment(Alignment::Right), chunks[1]);
+    }
 }
 
 /// Construct a generic list widget
