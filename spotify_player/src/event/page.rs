@@ -181,12 +181,17 @@ fn handle_search_tui_input(key: Key, ui: &mut UIStateGuard) -> Option<bool> {
     };
 
     if matches!(key, Key::None(KeyCode::Backspace)) && line_input.is_empty() {
-        return Some(if matches!(state.mode, SearchTuiMode::Playlist { .. }) {
-            reset_search_tui_to_global(line_input, state);
-            true
-        } else {
-            false
-        });
+        return Some(
+            if matches!(
+                state.mode,
+                SearchTuiMode::Playlist { .. } | SearchTuiMode::Album { .. }
+            ) {
+                reset_search_tui_to_global(line_input, state);
+                true
+            } else {
+                false
+            },
+        );
     }
 
     let effect = line_input.input(&key);
@@ -206,7 +211,10 @@ fn handle_search_tui_escape(ui: &mut UIStateGuard) -> Result<bool> {
         anyhow::bail!("expect a search tui page");
     };
 
-    if matches!(state.mode, SearchTuiMode::Playlist { .. }) {
+    if matches!(
+        state.mode,
+        SearchTuiMode::Playlist { .. } | SearchTuiMode::Album { .. }
+    ) {
         reset_search_tui_to_global(line_input, state);
     } else if !line_input.is_empty() {
         *line_input = LineInput::default();
@@ -239,8 +247,8 @@ fn search_tui_len(state: &SharedState, ui: &mut UIStateGuard) -> usize {
 
     match mode {
         SearchTuiMode::Global => search_tui::build_items(&data, mode, &query).len(),
-        SearchTuiMode::Playlist { .. } => {
-            search_tui::build_playlist_tracks(&data, mode, &query).len()
+        SearchTuiMode::Playlist { .. } | SearchTuiMode::Album { .. } => {
+            search_tui::build_context_tracks(&data, mode, &query).len()
         }
     }
 }
@@ -273,23 +281,29 @@ fn choose_search_tui_item(
             drop(data);
             play_or_open_search_tui_item(item, client_pub, state, ui, false)
         }
-        SearchTuiMode::Playlist {
-            ref playlist_id,
-            playlist_name: _,
-        } => {
-            let tracks = search_tui::build_playlist_tracks(&data, &mode, &query);
+        SearchTuiMode::Playlist { .. } | SearchTuiMode::Album { .. } => {
+            let tracks = search_tui::build_context_tracks(&data, &mode, &query);
             if selected >= tracks.len() {
                 return Ok(false);
             }
             let track = tracks[selected].clone();
             drop(data);
             state.player.write().currently_playing_tracks_id = None;
-            client_pub.send(ClientRequest::Player(PlayerRequest::StartPlayback(
-                Playback::Context(
+            let playback = match mode {
+                SearchTuiMode::Playlist {
+                    ref playlist_id, ..
+                } => Playback::Context(
                     ContextId::Playlist(playlist_id.clone_static()),
                     Some(Offset::Uri(track.id.uri())),
                 ),
-                None,
+                SearchTuiMode::Album { ref album_id, .. } => Playback::Context(
+                    ContextId::Album(album_id.clone_static()),
+                    Some(Offset::Uri(track.id.uri())),
+                ),
+                SearchTuiMode::Global => unreachable!("handled above"),
+            };
+            client_pub.send(ClientRequest::Player(PlayerRequest::StartPlayback(
+                playback, None,
             )))?;
             Ok(true)
         }
@@ -319,7 +333,7 @@ fn play_search_tui_item(
             drop(data);
             play_or_open_search_tui_item(item, client_pub, state, ui, true)
         }
-        SearchTuiMode::Playlist { .. } => {
+        SearchTuiMode::Playlist { .. } | SearchTuiMode::Album { .. } => {
             drop(data);
             choose_search_tui_item(client_pub, state, ui)
         }
@@ -331,7 +345,7 @@ fn play_or_open_search_tui_item(
     client_pub: &flume::Sender<ClientRequest>,
     state: &SharedState,
     ui: &mut UIStateGuard,
-    force_play_playlist: bool,
+    force_play_context: bool,
 ) -> Result<bool> {
     match item {
         search_tui::SearchTuiItem::Track { track, .. } => {
@@ -348,14 +362,32 @@ fn play_or_open_search_tui_item(
                 None,
             )))?;
         }
-        search_tui::SearchTuiItem::Album { album, .. } => {
+        search_tui::SearchTuiItem::Album { album, .. } if force_play_context => {
             state.player.write().currently_playing_tracks_id = None;
             client_pub.send(ClientRequest::Player(PlayerRequest::StartPlayback(
                 Playback::Context(ContextId::Album(album.id), None),
                 None,
             )))?;
         }
-        search_tui::SearchTuiItem::Playlist { playlist, .. } if force_play_playlist => {
+        search_tui::SearchTuiItem::Album { album, .. } => {
+            client_pub.send(ClientRequest::GetContext(ContextId::Album(
+                album.id.clone_static(),
+            )))?;
+
+            let PageState::SearchTui { line_input, state } = ui.current_page_mut() else {
+                anyhow::bail!("expect a search tui page");
+            };
+            *line_input = LineInput::default();
+            state.mode = SearchTuiMode::Album {
+                album_id: album.id.clone_static(),
+                title: album.name,
+            };
+            state.focus = SearchTuiFocus::Results;
+            state.result_list = Default::default();
+            state.last_dispatched_query = None;
+            state.last_edited_at = Instant::now();
+        }
+        search_tui::SearchTuiItem::Playlist { playlist, .. } if force_play_context => {
             state.player.write().currently_playing_tracks_id = None;
             client_pub.send(ClientRequest::Player(PlayerRequest::StartPlayback(
                 Playback::Context(ContextId::Playlist(playlist.id), None),
@@ -373,7 +405,7 @@ fn play_or_open_search_tui_item(
             *line_input = LineInput::default();
             state.mode = SearchTuiMode::Playlist {
                 playlist_id: playlist.id.clone_static(),
-                playlist_name: playlist.name,
+                title: playlist.name,
             };
             state.focus = SearchTuiFocus::Results;
             state.result_list = Default::default();
@@ -416,8 +448,8 @@ fn radio_search_tui_item(
                     }
                 }
             }
-            SearchTuiMode::Playlist { .. } => {
-                let tracks = search_tui::build_playlist_tracks(&data, &mode, &query);
+            SearchTuiMode::Playlist { .. } | SearchTuiMode::Album { .. } => {
+                let tracks = search_tui::build_context_tracks(&data, &mode, &query);
                 if selected >= tracks.len() {
                     return Ok(false);
                 }

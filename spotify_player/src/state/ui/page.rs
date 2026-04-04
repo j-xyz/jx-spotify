@@ -1,5 +1,5 @@
 use crate::{
-    state::model::{Category, ContextId, PlaylistId},
+    state::model::{AlbumId, Category, ContextId, PlaylistId},
     ui::single_line_input::LineInput,
 };
 use ratatui::widgets::{ListState, TableState};
@@ -90,7 +90,11 @@ pub enum SearchTuiMode {
     Global,
     Playlist {
         playlist_id: PlaylistId<'static>,
-        playlist_name: String,
+        title: String,
+    },
+    Album {
+        album_id: AlbumId<'static>,
+        title: String,
     },
 }
 

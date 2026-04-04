@@ -282,9 +282,9 @@ pub fn render_search_tui_page(
                 .map(Into::into)
                 .collect(),
         ),
-        SearchTuiMode::Playlist { playlist_name, .. } => (
-            playlist_name.as_str(),
-            search_tui::build_playlist_tracks(&data, &mode, &query)
+        SearchTuiMode::Playlist { title, .. } | SearchTuiMode::Album { title, .. } => (
+            title.as_str(),
+            search_tui::build_context_tracks(&data, &mode, &query)
                 .into_iter()
                 .map(search_tui_playlist_row)
                 .collect::<Vec<_>>(),
@@ -361,26 +361,26 @@ fn search_tui_results_help(mode: &SearchTuiMode, ui: &UIStateGuard) -> Line<'sta
         SearchTuiMode::Global => Line::from(vec![
             Span::styled("Use ", plain),
             Span::styled("Tab", key),
-            Span::styled(" to switch panes. In results: ", plain),
+            Span::styled(" switch panes. ", plain),
             Span::styled("Enter", key),
-            Span::styled(" choose, ", plain),
+            Span::styled(" open, ", plain),
             Span::styled("p", key),
-            Span::styled(" play directly, ", plain),
+            Span::styled(" play, ", plain),
             Span::styled("r", key),
-            Span::styled(" open radio, ", plain),
+            Span::styled(" radio, ", plain),
             Span::styled("/", key),
-            Span::styled(" jump to search.", plain),
+            Span::styled(" search.", plain),
         ]),
-        SearchTuiMode::Playlist { .. } => Line::from(vec![
+        SearchTuiMode::Playlist { .. } | SearchTuiMode::Album { .. } => Line::from(vec![
             Span::styled("Use ", plain),
             Span::styled("Tab", key),
-            Span::styled(" to switch panes. In results: ", plain),
+            Span::styled(" switch panes. ", plain),
             Span::styled("Enter", key),
-            Span::styled(" plays in context, ", plain),
+            Span::styled(" play, ", plain),
             Span::styled("r", key),
-            Span::styled(" opens radio, ", plain),
+            Span::styled(" radio, ", plain),
             Span::styled("/", key),
-            Span::styled(" jumps to search.", plain),
+            Span::styled(" search.", plain),
         ]),
     }
 }
@@ -391,35 +391,32 @@ fn search_tui_search_help(mode: &SearchTuiMode, ui: &UIStateGuard) -> Line<'stat
 
     match mode {
         SearchTuiMode::Global => Line::from(vec![
-            Span::styled(
-                "Type to search recent tracks, playlists, and Spotify results. Use ",
-                plain,
-            ),
+            Span::styled("Sigils: ", plain),
             Span::styled("!song", key),
-            Span::styled(", ", plain),
+            Span::styled(" ", plain),
             Span::styled("@artist", key),
-            Span::styled(", ", plain),
+            Span::styled(" ", plain),
             Span::styled("$album", key),
-            Span::styled(", and ", plain),
+            Span::styled(" ", plain),
             Span::styled("#genre", key),
-            Span::styled(" as quick filters. ", plain),
+            Span::styled(". ", plain),
             Span::styled("Enter", key),
-            Span::styled(" moves focus to results. ", plain),
+            Span::styled(" results. ", plain),
             Span::styled("Ctrl-C", key),
             Span::styled(" quits.", plain),
         ]),
-        SearchTuiMode::Playlist { .. } => Line::from(vec![
-            Span::styled("Type to filter the current playlist locally with ", plain),
+        SearchTuiMode::Playlist { .. } | SearchTuiMode::Album { .. } => Line::from(vec![
+            Span::styled("Sigils: ", plain),
             Span::styled("!song", key),
-            Span::styled(", ", plain),
+            Span::styled(" ", plain),
             Span::styled("@artist", key),
-            Span::styled(", ", plain),
+            Span::styled(" ", plain),
             Span::styled("$album", key),
-            Span::styled(", and ", plain),
+            Span::styled(" ", plain),
             Span::styled("#genre", key),
             Span::styled(". ", plain),
             Span::styled("Esc", key),
-            Span::styled(" returns to global search. ", plain),
+            Span::styled(" back. ", plain),
             Span::styled("Ctrl-C", key),
             Span::styled(" quits.", plain),
         ]),

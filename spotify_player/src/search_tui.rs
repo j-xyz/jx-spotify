@@ -232,7 +232,7 @@ pub fn remote_candidate_query(mode: &SearchTuiMode, query: &str) -> Option<Strin
 pub fn build_items(data: &DataReadGuard, mode: &SearchTuiMode, query: &str) -> Vec<SearchTuiItem> {
     match mode {
         SearchTuiMode::Global => build_global_items(data, query),
-        SearchTuiMode::Playlist { .. } => Vec::new(),
+        SearchTuiMode::Playlist { .. } | SearchTuiMode::Album { .. } => Vec::new(),
     }
 }
 
@@ -368,20 +368,8 @@ fn push_remote_items<I>(
     }
 }
 
-pub fn build_playlist_tracks(
-    data: &DataReadGuard,
-    mode: &SearchTuiMode,
-    query: &str,
-) -> Vec<Track> {
-    let SearchTuiMode::Playlist { playlist_id, .. } = mode else {
-        return Vec::new();
-    };
-
-    let Some(Context::Playlist { tracks, .. }) = data
-        .caches
-        .context
-        .get(&crate::state::ContextId::Playlist(playlist_id.clone()).uri())
-    else {
+pub fn build_context_tracks(data: &DataReadGuard, mode: &SearchTuiMode, query: &str) -> Vec<Track> {
+    let Some(tracks) = context_tracks(data, mode) else {
         return Vec::new();
     };
 
@@ -392,6 +380,28 @@ pub fn build_playlist_tracks(
         .take(PLAYLIST_TRACK_LIMIT)
         .cloned()
         .collect()
+}
+
+fn context_tracks<'a>(data: &'a DataReadGuard, mode: &SearchTuiMode) -> Option<&'a [Track]> {
+    match mode {
+        SearchTuiMode::Global => None,
+        SearchTuiMode::Playlist { playlist_id, .. } => match data
+            .caches
+            .context
+            .get(&crate::state::ContextId::Playlist(playlist_id.clone()).uri())
+        {
+            Some(Context::Playlist { tracks, .. }) => Some(tracks.as_slice()),
+            _ => None,
+        },
+        SearchTuiMode::Album { album_id, .. } => match data
+            .caches
+            .context
+            .get(&crate::state::ContextId::Album(album_id.clone()).uri())
+        {
+            Some(Context::Album { tracks, .. }) => Some(tracks.as_slice()),
+            _ => None,
+        },
+    }
 }
 
 fn parse_sigil_token(token: &str) -> Option<(SearchTuiQuerySection, &str)> {
