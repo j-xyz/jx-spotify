@@ -71,7 +71,7 @@ pub fn run(state: &SharedState) -> Result<()> {
             next_refresh_duration(state, &ui)
         };
 
-        std::thread::sleep(next_refresh_duration);
+        state.wait_for_redraw(next_refresh_duration);
     }
 }
 

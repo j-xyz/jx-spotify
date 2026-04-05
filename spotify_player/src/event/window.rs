@@ -1,4 +1,4 @@
-use super::page::handle_navigation_command;
+use super::page::handle_wrap_navigation_command;
 use super::*;
 use crate::{
     command::{
@@ -294,7 +294,7 @@ fn handle_command_for_track_table_window(
     }
 
     let count = ui.count_prefix;
-    if handle_navigation_command(
+    if handle_wrap_navigation_command(
         command,
         ui.current_page_mut(),
         id,
@@ -385,7 +385,7 @@ pub fn handle_command_for_track_list_window(
     }
 
     let count = ui.count_prefix;
-    if handle_navigation_command(command, ui.current_page_mut(), id, tracks.len(), count) {
+    if handle_wrap_navigation_command(command, ui.current_page_mut(), id, tracks.len(), count) {
         return Ok(true);
     }
     match command {
@@ -433,7 +433,7 @@ pub fn handle_command_for_artist_list_window(
     }
 
     let count = ui.count_prefix;
-    if handle_navigation_command(command, ui.current_page_mut(), id, artists.len(), count) {
+    if handle_wrap_navigation_command(command, ui.current_page_mut(), id, artists.len(), count) {
         return true;
     }
     match command {
@@ -470,7 +470,7 @@ pub fn handle_command_for_album_list_window(
     }
 
     let count = ui.count_prefix;
-    if handle_navigation_command(command, ui.current_page_mut(), id, albums.len(), count) {
+    if handle_wrap_navigation_command(command, ui.current_page_mut(), id, albums.len(), count) {
         return Ok(true);
     }
     match command {
@@ -509,7 +509,7 @@ pub fn handle_command_for_playlist_list_window(
     }
 
     let count = ui.count_prefix;
-    if handle_navigation_command(command, ui.current_page_mut(), id, playlists.len(), count) {
+    if handle_wrap_navigation_command(command, ui.current_page_mut(), id, playlists.len(), count) {
         return true;
     }
     match command {
@@ -563,7 +563,7 @@ pub fn handle_command_for_show_list_window(
     }
 
     let count = ui.count_prefix;
-    if handle_navigation_command(command, ui.current_page_mut(), id, shows.len(), count) {
+    if handle_wrap_navigation_command(command, ui.current_page_mut(), id, shows.len(), count) {
         return true;
     }
     match command {
@@ -601,7 +601,7 @@ pub fn handle_command_for_episode_list_window(
     }
 
     let count = ui.count_prefix;
-    if handle_navigation_command(command, ui.current_page_mut(), id, episodes.len(), count) {
+    if handle_wrap_navigation_command(command, ui.current_page_mut(), id, episodes.len(), count) {
         return Ok(true);
     }
     match command {
@@ -646,7 +646,7 @@ fn handle_command_for_episode_table_window(
     }
 
     let count = ui.count_prefix;
-    if handle_navigation_command(command, ui.current_page_mut(), id, episodes.len(), count) {
+    if handle_wrap_navigation_command(command, ui.current_page_mut(), id, episodes.len(), count) {
         return Ok(true);
     }
     match command {

@@ -123,7 +123,7 @@ fn handle_key_sequence_for_search_tui_page(
     };
 
     if let Some(command) = command {
-        Ok(handle_navigation_command(
+        Ok(handle_wrap_navigation_command(
             command,
             ui.current_page_mut(),
             selected,
@@ -916,7 +916,7 @@ fn handle_command_for_browse_page(
         return Ok(false);
     }
 
-    if handle_navigation_command(command, page_state, selected, len, count) {
+    if handle_wrap_navigation_command(command, page_state, selected, len, count) {
         return Ok(true);
     }
     match command {
@@ -1044,5 +1044,31 @@ pub fn handle_navigation_command(
             true
         }
         _ => false,
+    }
+}
+
+pub fn handle_wrap_navigation_command(
+    command: Command,
+    page: &mut PageState,
+    id: usize,
+    len: usize,
+    count: Option<usize>,
+) -> bool {
+    if len == 0 {
+        return false;
+    }
+
+    match command {
+        Command::SelectNextOrScrollDown => {
+            let offset = count.unwrap_or(1) % len;
+            page.select((id + offset) % len);
+            true
+        }
+        Command::SelectPreviousOrScrollUp => {
+            let offset = count.unwrap_or(1) % len;
+            page.select((id + len - offset) % len);
+            true
+        }
+        _ => handle_navigation_command(command, page, id, len, count),
     }
 }

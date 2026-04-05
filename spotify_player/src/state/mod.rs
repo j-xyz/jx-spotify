@@ -14,7 +14,13 @@ pub use ui::*;
 
 use crate::config;
 
-pub use parking_lot::{Mutex, RwLock};
+pub use parking_lot::{Condvar, Mutex, RwLock};
+
+#[derive(Default)]
+pub struct RedrawSignal {
+    pending: Mutex<bool>,
+    ready: Condvar,
+}
 
 /// Application's shared state
 pub type SharedState = Arc<State>;
@@ -24,6 +30,7 @@ pub struct State {
     pub ui: Mutex<UIState>,
     pub player: RwLock<PlayerState>,
     pub data: RwLock<AppData>,
+    pub redraw_signal: Arc<RedrawSignal>,
 
     pub is_daemon: bool,
 
@@ -52,6 +59,7 @@ impl State {
             ui: Mutex::new(ui),
             player: RwLock::new(PlayerState::default()),
             data: RwLock::new(app_data),
+            redraw_signal: Arc::new(RedrawSignal::default()),
             is_daemon,
             #[cfg(feature = "streaming")]
             vis_bands: if configs.app_config.enable_audio_visualization {
@@ -81,5 +89,19 @@ impl State {
     #[cfg(feature = "streaming")]
     pub fn is_local_streaming_active(&self) -> bool {
         self.vis_bands.as_ref().is_some_and(|b| b.lock().is_active)
+    }
+
+    pub fn request_redraw(&self) {
+        let mut pending = self.redraw_signal.pending.lock();
+        *pending = true;
+        self.redraw_signal.ready.notify_one();
+    }
+
+    pub fn wait_for_redraw(&self, timeout: std::time::Duration) {
+        let mut pending = self.redraw_signal.pending.lock();
+        if !*pending {
+            self.redraw_signal.ready.wait_for(&mut pending, timeout);
+        }
+        *pending = false;
     }
 }

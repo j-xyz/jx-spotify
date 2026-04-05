@@ -39,21 +39,21 @@ pub fn start_event_handler(state: &SharedState, client_pub: &flume::Sender<Clien
         if let Err(err) = match event {
             crossterm::event::Event::Mouse(event) => {
                 state.ui.lock().last_interaction_at = Instant::now();
+                state.request_redraw();
                 handle_mouse_event(event, client_pub, state)
             }
             crossterm::event::Event::Resize(columns, rows) => {
                 let mut ui = state.ui.lock();
                 ui.orientation = Orientation::from_size(columns, rows);
                 ui.last_interaction_at = Instant::now();
+                drop(ui);
+                state.request_redraw();
                 Ok(())
             }
             crossterm::event::Event::Key(event) => {
-                if event.kind == crossterm::event::KeyEventKind::Press {
-                    // only handle key press event to avoid handling a key event multiple times
-                    // context:
-                    // - https://github.com/crossterm-rs/crossterm/issues/752
-                    // - https://github.com/aome510/spotify-player/issues/136
+                if should_handle_key_event(&event) {
                     state.ui.lock().last_interaction_at = Instant::now();
+                    state.request_redraw();
                     handle_key_event(event, client_pub, state)
                 } else {
                     Ok(())
@@ -63,6 +63,26 @@ pub fn start_event_handler(state: &SharedState, client_pub: &flume::Sender<Clien
         } {
             tracing::error!("Failed to handle terminal event: {err:#}");
         }
+    }
+}
+
+fn should_handle_key_event(event: &crossterm::event::KeyEvent) -> bool {
+    match event.kind {
+        crossterm::event::KeyEventKind::Press => true,
+        // Accept held-key repeats for directional navigation without
+        // re-enabling duplicate handling for every shortcut.
+        crossterm::event::KeyEventKind::Repeat => matches!(
+            event.code,
+            crossterm::event::KeyCode::Up
+                | crossterm::event::KeyCode::Down
+                | crossterm::event::KeyCode::Left
+                | crossterm::event::KeyCode::Right
+                | crossterm::event::KeyCode::PageUp
+                | crossterm::event::KeyCode::PageDown
+                | crossterm::event::KeyCode::Char('j')
+                | crossterm::event::KeyCode::Char('k')
+        ),
+        crossterm::event::KeyEventKind::Release => false,
     }
 }
 

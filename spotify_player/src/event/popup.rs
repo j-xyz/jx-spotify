@@ -453,15 +453,21 @@ fn handle_command_for_list_popup(
 
     match command {
         Command::SelectPreviousOrScrollUp => {
-            if current_id > 0 {
-                popup.list_select(Some(current_id - 1));
-                on_select_func(ui, current_id - 1);
+            if n_items > 0 {
+                let next_id = if current_id == 0 {
+                    n_items - 1
+                } else {
+                    current_id - 1
+                };
+                popup.list_select(Some(next_id));
+                on_select_func(ui, next_id);
             }
         }
         Command::SelectNextOrScrollDown => {
-            if current_id + 1 < n_items {
-                popup.list_select(Some(current_id + 1));
-                on_select_func(ui, current_id + 1);
+            if n_items > 0 {
+                let next_id = (current_id + 1) % n_items;
+                popup.list_select(Some(next_id));
+                on_select_func(ui, next_id);
             }
         }
         Command::ChooseSelected => {
