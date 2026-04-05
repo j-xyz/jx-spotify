@@ -22,7 +22,7 @@ pub fn render_playback_window(
     ui: &mut UIStateGuard,
     rect: Rect,
 ) -> Rect {
-    let (rect, other_rect) = split_rect_for_playback_window(state, rect);
+    let (rect, other_rect) = split_rect_for_playback_window(state, ui, rect);
     let player = state.player.read();
 
     let rect = utils::render_panel(
@@ -478,9 +478,15 @@ fn render_playback_cover_image(state: &SharedState, ui: &mut UIStateGuard) -> Re
 /// Split the given area into two, the first one for the playback window
 /// and the second one for the main application's layout (popup, page, etc).
 #[allow(unused_variables)]
-fn split_rect_for_playback_window(state: &SharedState, rect: Rect) -> (Rect, Rect) {
+fn split_rect_for_playback_window(
+    state: &SharedState,
+    ui: &UIStateGuard,
+    rect: Rect,
+) -> (Rect, Rect) {
     let configs = config::get_config();
-    let playback_width = configs.app_config.layout.playback_window_height;
+    let playback_width = estimated_playback_content_height(state, ui)
+        .unwrap_or(configs.app_config.layout.playback_window_height)
+        .min(configs.app_config.layout.playback_window_height);
     // the playback window's width should not be smaller than the cover image's width + 1
     #[cfg(feature = "image")]
     let playback_width = std::cmp::max(configs.app_config.cover_img_width + 1, playback_width);
@@ -503,4 +509,16 @@ fn split_rect_for_playback_window(state: &SharedState, rect: Rect) -> (Rect, Rec
         Layout::vertical([Constraint::Fill(0), Constraint::Length(playback_width)]).split(rect);
 
     (chunks[1], chunks[0])
+}
+
+fn estimated_playback_content_height(state: &SharedState, ui: &UIStateGuard) -> Option<usize> {
+    let _ = (state, ui);
+    let playback_format_lines = config::get_config()
+        .app_config
+        .playback_format
+        .lines()
+        .count()
+        .max(1);
+
+    Some(playback_format_lines.max(2))
 }
