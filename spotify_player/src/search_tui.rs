@@ -17,6 +17,34 @@ const REMOTE_ALBUM_LIMIT: usize = 5;
 const REMOTE_PLAYLIST_LIMIT: usize = 5;
 const PLAYLIST_TRACK_LIMIT: usize = 200;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SearchTuiResultsSource {
+    Standard,
+    LocalFallback,
+}
+
+#[derive(Clone, Debug)]
+pub struct SearchTuiResults {
+    pub items: Vec<SearchTuiItem>,
+    pub source: SearchTuiResultsSource,
+}
+
+impl SearchTuiResults {
+    fn standard(items: Vec<SearchTuiItem>) -> Self {
+        Self {
+            items,
+            source: SearchTuiResultsSource::Standard,
+        }
+    }
+
+    fn local_fallback(items: Vec<SearchTuiItem>) -> Self {
+        Self {
+            items,
+            source: SearchTuiResultsSource::LocalFallback,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum SearchTuiItemKind {
     Track,
@@ -162,125 +190,164 @@ pub fn remote_candidate_query(mode: &SearchTuiMode, query: &str) -> Option<Strin
     }
 }
 
-pub fn build_items(data: &DataReadGuard, mode: &SearchTuiMode, query: &str) -> Vec<SearchTuiItem> {
+pub fn build_items(data: &DataReadGuard, mode: &SearchTuiMode, query: &str) -> SearchTuiResults {
     match mode {
         SearchTuiMode::Global => build_global_items(data, query),
         SearchTuiMode::Playlist { .. }
         | SearchTuiMode::Album { .. }
-        | SearchTuiMode::Artist { .. } => Vec::new(),
+        | SearchTuiMode::Artist { .. } => SearchTuiResults::standard(Vec::new()),
     }
 }
 
-fn build_global_items(data: &DataReadGuard, query: &str) -> Vec<SearchTuiItem> {
+fn build_global_items(data: &DataReadGuard, query: &str) -> SearchTuiResults {
     let parsed_query = SearchTuiQuery::parse(query);
+    let (mut items, mut seen) = build_standard_local_items(data, &parsed_query);
+
+    let Some(candidate_query) = remote_candidate_query(&SearchTuiMode::Global, query) else {
+        return SearchTuiResults::standard(items);
+    };
+
+    let Some(results) = data.caches.search.get(&candidate_query) else {
+        return SearchTuiResults::standard(items);
+    };
+
+    let remote_matches = push_matching_items(
+        &parsed_query,
+        &mut items,
+        &mut seen,
+        results
+            .tracks
+            .iter()
+            .cloned()
+            .map(|track| SearchTuiItem::Track { track }),
+        REMOTE_TRACK_LIMIT,
+    ) + push_matching_items(
+        &parsed_query,
+        &mut items,
+        &mut seen,
+        results
+            .artists
+            .iter()
+            .cloned()
+            .map(|artist| SearchTuiItem::Artist { artist }),
+        REMOTE_ARTIST_LIMIT,
+    ) + push_matching_items(
+        &parsed_query,
+        &mut items,
+        &mut seen,
+        results
+            .albums
+            .iter()
+            .cloned()
+            .map(|album| SearchTuiItem::Album { album }),
+        REMOTE_ALBUM_LIMIT,
+    ) + push_matching_items(
+        &parsed_query,
+        &mut items,
+        &mut seen,
+        results
+            .playlists
+            .iter()
+            .cloned()
+            .map(|playlist| SearchTuiItem::Playlist { playlist }),
+        REMOTE_PLAYLIST_LIMIT,
+    );
+
+    if remote_matches > 0 {
+        SearchTuiResults::standard(items)
+    } else {
+        SearchTuiResults::local_fallback(build_local_fallback_items(data, &parsed_query))
+    }
+}
+
+fn build_standard_local_items(
+    data: &DataReadGuard,
+    parsed_query: &SearchTuiQuery,
+) -> (Vec<SearchTuiItem>, HashSet<String>) {
     let mut items = Vec::new();
     let mut seen = HashSet::new();
 
     if let Some(Context::Tracks { tracks, .. }) =
         data.caches.context.get(&USER_RECENTLY_PLAYED_TRACKS_ID.uri)
     {
+        let mut added = 0;
         for track in tracks {
+            if added >= RECENT_TRACK_LIMIT {
+                break;
+            }
+
             let item = SearchTuiItem::Track {
                 track: track.clone(),
             };
             if parsed_query.matches_item(&item) {
+                let had_key = seen.contains(&item.key());
                 push_item(&mut items, &mut seen, item);
+                if !had_key {
+                    added += 1;
+                }
             }
-            if items.len() >= RECENT_TRACK_LIMIT {
-                break;
-            }
         }
     }
 
-    let library_playlists = data
-        .user_data
-        .playlists
-        .iter()
-        .filter_map(|item| match item {
-            PlaylistFolderItem::Playlist(playlist) => Some(playlist.clone()),
-            PlaylistFolderItem::Folder(_) => None,
-        })
-        .collect::<Vec<_>>();
+    push_matching_items(
+        parsed_query,
+        &mut items,
+        &mut seen,
+        data.user_data
+            .playlists
+            .iter()
+            .filter_map(|item| match item {
+                PlaylistFolderItem::Playlist(playlist) => Some(SearchTuiItem::Playlist {
+                    playlist: playlist.clone(),
+                }),
+                PlaylistFolderItem::Folder(_) => None,
+            }),
+        PLAYLIST_LIMIT,
+    );
 
-    let mut playlist_count = items
-        .iter()
-        .filter(|item| matches!(item, SearchTuiItem::Playlist { .. }))
-        .count();
-    for playlist in &library_playlists {
-        if playlist_count >= PLAYLIST_LIMIT {
-            break;
-        }
+    (items, seen)
+}
 
-        let item = SearchTuiItem::Playlist {
-            playlist: playlist.clone(),
-        };
-        if parsed_query.matches_item(&item) {
-            push_item(&mut items, &mut seen, item);
-            playlist_count += 1;
-        }
-    }
+fn build_local_fallback_items(
+    data: &DataReadGuard,
+    parsed_query: &SearchTuiQuery,
+) -> Vec<SearchTuiItem> {
+    let (mut items, mut seen) = build_standard_local_items(data, parsed_query);
 
-    let Some(candidate_query) = remote_candidate_query(&SearchTuiMode::Global, query) else {
-        return items;
-    };
-
-    if let Some(results) = data.caches.search.get(&candidate_query) {
-        push_remote_items(
-            &parsed_query,
-            &mut items,
-            &mut seen,
-            results
-                .tracks
-                .iter()
-                .cloned()
-                .map(|track| SearchTuiItem::Track { track }),
-            REMOTE_TRACK_LIMIT,
-        );
-        push_remote_items(
-            &parsed_query,
-            &mut items,
-            &mut seen,
-            results
-                .artists
-                .iter()
-                .cloned()
-                .map(|artist| SearchTuiItem::Artist { artist }),
-            REMOTE_ARTIST_LIMIT,
-        );
-        push_remote_items(
-            &parsed_query,
-            &mut items,
-            &mut seen,
-            results
-                .albums
-                .iter()
-                .cloned()
-                .map(|album| SearchTuiItem::Album { album }),
-            REMOTE_ALBUM_LIMIT,
-        );
-        push_remote_items(
-            &parsed_query,
-            &mut items,
-            &mut seen,
-            results
-                .playlists
-                .iter()
-                .cloned()
-                .map(|playlist| SearchTuiItem::Playlist { playlist }),
-            REMOTE_PLAYLIST_LIMIT,
-        );
-    }
+    push_matching_items(
+        parsed_query,
+        &mut items,
+        &mut seen,
+        data.user_data
+            .saved_albums
+            .iter()
+            .cloned()
+            .map(|album| SearchTuiItem::Album { album }),
+        REMOTE_ALBUM_LIMIT,
+    );
+    push_matching_items(
+        parsed_query,
+        &mut items,
+        &mut seen,
+        data.user_data
+            .followed_artists
+            .iter()
+            .cloned()
+            .map(|artist| SearchTuiItem::Artist { artist }),
+        REMOTE_ARTIST_LIMIT,
+    );
 
     items
 }
 
-fn push_remote_items<I>(
+fn push_matching_items<I>(
     parsed_query: &SearchTuiQuery,
     items: &mut Vec<SearchTuiItem>,
     seen: &mut HashSet<String>,
     source: I,
     limit: usize,
-) where
+) -> usize
+where
     I: IntoIterator<Item = SearchTuiItem>,
 {
     let mut added = 0;
@@ -296,6 +363,8 @@ fn push_remote_items<I>(
             }
         }
     }
+
+    added
 }
 
 pub fn build_context_tracks(data: &DataReadGuard, mode: &SearchTuiMode, query: &str) -> Vec<Track> {
@@ -411,6 +480,87 @@ fn playlist_search_text(playlist: &Playlist) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+
+    use crate::state::{
+        Album, AppData, Artist, BrowseData, MemoryCaches, SearchResults, TrackId, UserData,
+        TTL_CACHE_DURATION,
+    };
+    use rspotify::model::{AlbumId, ArtistId, PlaylistId, UserId};
+
+    fn test_app_data() -> AppData {
+        AppData {
+            user_data: UserData {
+                user: None,
+                playlists: Vec::new(),
+                playlist_folder_node: None,
+                followed_artists: Vec::new(),
+                saved_shows: Vec::new(),
+                saved_albums: Vec::new(),
+                saved_tracks: HashMap::new(),
+            },
+            caches: MemoryCaches::new(),
+            browse: BrowseData::default(),
+        }
+    }
+
+    fn test_artist(id: &str, name: &str) -> Artist {
+        Artist {
+            id: ArtistId::from_id(id).unwrap().into_static(),
+            name: name.to_string(),
+        }
+    }
+
+    fn test_album(id: &str, name: &str, artists: Vec<Artist>) -> Album {
+        Album {
+            id: AlbumId::from_id(id).unwrap().into_static(),
+            release_date: "2023".to_string(),
+            name: name.to_string(),
+            artists,
+            typ: None,
+            added_at: 0,
+        }
+    }
+
+    fn test_track(id: &str, name: &str, artists: Vec<Artist>, album: Option<Album>) -> Track {
+        Track {
+            id: TrackId::from_id(id).unwrap().into_static(),
+            name: name.to_string(),
+            artists,
+            album,
+            duration: std::time::Duration::from_secs(180),
+            explicit: false,
+            added_at: 0,
+        }
+    }
+
+    fn test_playlist(id: &str, name: &str, owner: &str) -> Playlist {
+        Playlist {
+            id: PlaylistId::from_id(id).unwrap().into_static(),
+            collaborative: false,
+            name: name.to_string(),
+            owner: (
+                owner.to_string(),
+                UserId::from_id(format!("{owner}-id"))
+                    .unwrap()
+                    .into_static(),
+            ),
+            desc: String::new(),
+            current_folder_id: 0,
+            snapshot_id: "snapshot".to_string(),
+        }
+    }
+
+    fn add_recent_tracks(data: &mut AppData, tracks: Vec<Track>) {
+        data.caches.context.insert(
+            USER_RECENTLY_PLAYED_TRACKS_ID.uri.clone(),
+            Context::Tracks {
+                tracks,
+                desc: "Recent".to_string(),
+            },
+            *TTL_CACHE_DURATION,
+        );
+    }
 
     #[test]
     fn parses_sigils_as_type_filters_with_embedded_terms() {
@@ -450,5 +600,114 @@ mod tests {
         let query = remote_candidate_query(&SearchTuiMode::Global, "!quiet @phoebe $punisher #mix");
 
         assert_eq!(query, Some(String::from("quiet phoebe punisher mix")));
+    }
+
+    #[test]
+    fn cache_miss_keeps_standard_results_without_early_fallback() {
+        let mut data = test_app_data();
+        let artist = test_artist("1111111111111111111111", "Phoebe Bridgers");
+        data.user_data.followed_artists.push(artist);
+
+        let data = parking_lot::RwLock::new(data);
+        let results = build_items(&data.read(), &SearchTuiMode::Global, "phoebe");
+
+        assert_eq!(results.source, SearchTuiResultsSource::Standard);
+        assert!(results.items.is_empty());
+    }
+
+    #[test]
+    fn empty_remote_results_use_local_fallback_items() {
+        let mut data = test_app_data();
+        let artist = test_artist("1111111111111111111111", "Phoebe Bridgers");
+        let album = test_album("2222222222222222222222", "Punisher", vec![artist.clone()]);
+        add_recent_tracks(
+            &mut data,
+            vec![test_track(
+                "3333333333333333333333",
+                "Kyoto",
+                vec![artist.clone()],
+                Some(album.clone()),
+            )],
+        );
+        data.user_data.saved_albums.push(album.clone());
+        data.user_data.followed_artists.push(artist.clone());
+        data.caches.search.insert(
+            "phoebe".to_string(),
+            SearchResults::default(),
+            *TTL_CACHE_DURATION,
+        );
+
+        let data = parking_lot::RwLock::new(data);
+        let results = build_items(&data.read(), &SearchTuiMode::Global, "phoebe");
+
+        assert_eq!(results.source, SearchTuiResultsSource::LocalFallback);
+        assert!(results.items.iter().any(|item| matches!(
+            item,
+            SearchTuiItem::Artist { artist: item_artist } if item_artist.id == artist.id
+        )));
+        assert!(results.items.iter().any(|item| matches!(
+            item,
+            SearchTuiItem::Album { album: item_album } if item_album.id == album.id
+        )));
+    }
+
+    #[test]
+    fn sigil_filters_apply_to_local_fallback_items() {
+        let mut data = test_app_data();
+        let artist = test_artist("1111111111111111111111", "Phoebe Bridgers");
+        let album = test_album("2222222222222222222222", "Punisher", vec![artist.clone()]);
+        data.user_data.saved_albums.push(album);
+        data.user_data.followed_artists.push(artist.clone());
+        data.user_data
+            .playlists
+            .push(PlaylistFolderItem::Playlist(test_playlist(
+                "3333333333333333333333",
+                "Phoebe Mix",
+                "jane",
+            )));
+        data.caches.search.insert(
+            "phoebe".to_string(),
+            SearchResults::default(),
+            *TTL_CACHE_DURATION,
+        );
+
+        let data = parking_lot::RwLock::new(data);
+        let results = build_items(&data.read(), &SearchTuiMode::Global, "@phoebe");
+
+        assert_eq!(results.source, SearchTuiResultsSource::LocalFallback);
+        assert_eq!(results.items.len(), 1);
+        assert!(matches!(
+            &results.items[0],
+            SearchTuiItem::Artist { artist: item_artist } if item_artist.id == artist.id
+        ));
+    }
+
+    #[test]
+    fn remote_results_keep_standard_mode_without_local_fallback_items() {
+        let mut data = test_app_data();
+        let remote_artist = test_artist("1111111111111111111111", "Phoebe Bridgers");
+        data.user_data.saved_albums.push(test_album(
+            "2222222222222222222222",
+            "Punisher",
+            vec![remote_artist.clone()],
+        ));
+        data.caches.search.insert(
+            "phoebe".to_string(),
+            SearchResults {
+                artists: vec![remote_artist.clone()],
+                ..Default::default()
+            },
+            *TTL_CACHE_DURATION,
+        );
+
+        let data = parking_lot::RwLock::new(data);
+        let results = build_items(&data.read(), &SearchTuiMode::Global, "phoebe");
+
+        assert_eq!(results.source, SearchTuiResultsSource::Standard);
+        assert_eq!(results.items.len(), 1);
+        assert!(matches!(
+            &results.items[0],
+            SearchTuiItem::Artist { artist } if artist.id == remote_artist.id
+        ));
     }
 }

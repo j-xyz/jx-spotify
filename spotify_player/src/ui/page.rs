@@ -306,20 +306,26 @@ pub fn render_search_tui_page(
     };
 
     let query = line_input.get_text();
-    let (title, items): (String, Vec<SearchTuiDisplayRow>) = {
+    let (title, source, items): (
+        String,
+        search_tui::SearchTuiResultsSource,
+        Vec<SearchTuiDisplayRow>,
+    ) = {
         let data = state.data.read();
         match &mode {
-            SearchTuiMode::Global => (
-                "Search Results".to_string(),
-                search_tui::build_items(&data, &mode, &query)
-                    .into_iter()
-                    .map(Into::into)
-                    .collect(),
-            ),
+            SearchTuiMode::Global => {
+                let results = search_tui::build_items(&data, &mode, &query);
+                (
+                    "Search Results".to_string(),
+                    results.source,
+                    results.items.into_iter().map(Into::into).collect(),
+                )
+            }
             SearchTuiMode::Playlist { title, .. }
             | SearchTuiMode::Album { title, .. }
             | SearchTuiMode::Artist { title, .. } => (
                 title.clone(),
+                search_tui::SearchTuiResultsSource::Standard,
                 search_tui::build_context_tracks(&data, &mode, &query)
                     .into_iter()
                     .map(search_tui_playlist_row)
@@ -353,10 +359,7 @@ pub fn render_search_tui_page(
         frame,
         chunks[1],
         &title,
-        Some(Line::from(vec![Span::styled(
-            format!("{} items", items.len()),
-            ui.theme.playback_metadata(),
-        )])),
+        Some(search_tui_results_meta_line(items.len(), source, ui)),
         focus == SearchTuiFocus::Results,
         ui,
     );
@@ -372,6 +375,23 @@ pub fn render_search_tui_page(
             chunks[4],
         );
     }
+}
+
+fn search_tui_results_meta_line(
+    count: usize,
+    source: search_tui::SearchTuiResultsSource,
+    ui: &UIStateGuard,
+) -> Line<'static> {
+    let mut spans = vec![Span::styled(
+        format!("{count} items"),
+        ui.theme.playback_metadata(),
+    )];
+    if source == search_tui::SearchTuiResultsSource::LocalFallback {
+        spans.push(Span::styled(" · ", ui.theme.playback_metadata()));
+        spans.push(Span::styled("local fallback", ui.theme.playlist_desc()));
+    }
+
+    Line::from(spans)
 }
 
 fn render_search_tui_label(

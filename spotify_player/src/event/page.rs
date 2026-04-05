@@ -231,7 +231,7 @@ fn search_tui_len(state: &SharedState, ui: &mut UIStateGuard) -> usize {
     };
 
     match mode {
-        SearchTuiMode::Global => search_tui::build_items(&data, mode, &query).len(),
+        SearchTuiMode::Global => search_tui::build_items(&data, mode, &query).items.len(),
         SearchTuiMode::Playlist { .. }
         | SearchTuiMode::Album { .. }
         | SearchTuiMode::Artist { .. } => {
@@ -259,12 +259,12 @@ fn choose_search_tui_item(
     let data = state.data.read();
     match mode {
         SearchTuiMode::Global => {
-            let items = search_tui::build_items(&data, &SearchTuiMode::Global, &query);
-            if selected >= items.len() {
+            let results = search_tui::build_items(&data, &SearchTuiMode::Global, &query);
+            if selected >= results.items.len() {
                 return Ok(false);
             }
 
-            let item = items[selected].clone();
+            let item = results.items[selected].clone();
             drop(data);
             play_or_open_search_tui_item(item, client_pub, state, ui, false)
         }
@@ -314,12 +314,12 @@ fn play_search_tui_item(
     let data = state.data.read();
     match mode {
         SearchTuiMode::Global => {
-            let items = search_tui::build_items(&data, &SearchTuiMode::Global, &query);
-            if selected >= items.len() {
+            let results = search_tui::build_items(&data, &SearchTuiMode::Global, &query);
+            if selected >= results.items.len() {
                 return Ok(false);
             }
 
-            let item = items[selected].clone();
+            let item = results.items[selected].clone();
             drop(data);
             play_or_open_search_tui_item(item, client_pub, state, ui, true)
         }
@@ -442,11 +442,11 @@ fn radio_search_tui_item(
         let data = state.data.read();
         match mode {
             SearchTuiMode::Global => {
-                let items = search_tui::build_items(&data, &SearchTuiMode::Global, &query);
-                if selected >= items.len() {
+                let results = search_tui::build_items(&data, &SearchTuiMode::Global, &query);
+                if selected >= results.items.len() {
                     return Ok(false);
                 }
-                let item = items[selected].clone();
+                let item = results.items[selected].clone();
                 match item {
                     search_tui::SearchTuiItem::Track { track, .. } => (track.id.uri(), track.name),
                     search_tui::SearchTuiItem::Artist { artist, .. } => {
