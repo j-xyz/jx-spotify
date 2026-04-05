@@ -1007,10 +1007,10 @@ pub fn render_commands_help_page(
             let v = map.entry(km.command);
             match v {
                 Entry::Vacant(v) => {
-                    v.insert(km.key_sequence.display_macos());
+                    v.insert(km.key_sequence.display_help());
                 }
                 Entry::Occupied(mut v) => {
-                    let keys = format!("{}, {}", v.get(), km.key_sequence.display_macos());
+                    let keys = format!("{}, {}", v.get(), km.key_sequence.display_help());
                     *v.get_mut() = keys;
                 }
             }
@@ -1026,7 +1026,7 @@ pub fn render_commands_help_page(
         .into_iter()
         .map(|(command, keys)| HelpRow {
             section: help_section(command),
-            shortcuts: format!("[{keys}]"),
+            shortcuts: keys,
             description: command.desc().to_string(),
         })
         .collect::<Vec<_>>();
@@ -1295,7 +1295,7 @@ fn help_section(command: Command) -> &'static str {
 fn format_shortcuts(shortcuts: &[&str]) -> String {
     shortcuts
         .iter()
-        .filter_map(|shortcut| KeySequence::from_str(shortcut).map(|keys| keys.display_macos()))
+        .filter_map(|shortcut| KeySequence::from_str(shortcut).map(|keys| keys.display_help()))
         .collect::<Vec<_>>()
         .join(", ")
 }

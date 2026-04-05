@@ -254,7 +254,7 @@ pub fn render_shortcut_help_popup(frame: &mut Frame, ui: &mut UIStateGuard, rect
         let chunks = Layout::vertical([Constraint::Fill(0), Constraint::Length(7)]).split(rect);
 
         let meta = Line::from(vec![super::Span::styled(
-            input.display_macos(),
+            input.display_help(),
             ui.theme.page_desc().add_modifier(super::Modifier::BOLD),
         )]);
         let rect = utils::render_panel(frame, &ui.theme, chunks[1], "shortcuts", Some(meta), true);
@@ -264,7 +264,7 @@ pub fn render_shortcut_help_popup(frame: &mut Frame, ui: &mut UIStateGuard, rect
                 .into_iter()
                 .map(|km| {
                     Row::new(vec![
-                        Cell::from(km.key_sequence.display_macos())
+                        Cell::from(km.key_sequence.display_help())
                             .style(ui.theme.page_desc().add_modifier(super::Modifier::BOLD)),
                         Cell::from(km.command.desc()),
                         Cell::from(format!("{:?}", km.command)).style(ui.theme.playback_metadata()),

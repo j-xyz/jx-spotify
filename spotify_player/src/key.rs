@@ -180,6 +180,16 @@ impl Key {
             Key::Unknown => "Unknown Key".to_string(),
         }
     }
+
+    pub fn display_help(self) -> String {
+        match self {
+            Key::None(KeyCode::Char(c)) => c.to_string(),
+            Key::Ctrl(KeyCode::Char(c)) => format!("control+{}", c.to_ascii_lowercase()),
+            Key::Alt(KeyCode::Char(c)) => format!("option+{}", c.to_ascii_lowercase()),
+            Key::Super(KeyCode::Char(c)) => format!("command+{}", c.to_ascii_lowercase()),
+            _ => self.display_macos().to_ascii_lowercase(),
+        }
+    }
 }
 
 impl<'de> serde::de::Deserialize<'de> for Key {
@@ -253,12 +263,12 @@ impl std::fmt::Display for KeySequence {
 }
 
 impl KeySequence {
-    pub fn display_macos(&self) -> String {
+    pub fn display_help(&self) -> String {
         self.keys
             .iter()
-            .map(|key| key.display_macos())
+            .map(|key| key.display_help())
             .collect::<Vec<_>>()
-            .join(" then ")
+            .join(",")
     }
 }
 
