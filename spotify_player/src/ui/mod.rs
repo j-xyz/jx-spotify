@@ -29,17 +29,19 @@ pub mod single_line_input;
 pub mod streaming;
 pub mod utils;
 
+const INTERACTION_GRACE_PERIOD: std::time::Duration = std::time::Duration::from_millis(400);
+const LOADING_REFRESH_DURATION: std::time::Duration = std::time::Duration::from_millis(100);
+const PLAYBACK_REFRESH_FLOOR: std::time::Duration = std::time::Duration::from_millis(250);
+const IDLE_REFRESH_DURATION: std::time::Duration = std::time::Duration::from_millis(1000);
+
 /// Run the application UI
 pub fn run(state: &SharedState) -> Result<()> {
     let mut terminal = init_ui().context("failed to initialize the application's UI")?;
 
-    let ui_refresh_duration = std::time::Duration::from_millis(
-        config::get_config().app_config.app_refresh_duration_in_ms,
-    );
     let mut last_terminal_size = None;
 
     loop {
-        {
+        let next_refresh_duration = {
             let mut ui = state.ui.lock();
             if !ui.is_running {
                 clean_up(terminal).context("clean up UI resources")?;
@@ -66,10 +68,46 @@ pub fn run(state: &SharedState) -> Result<()> {
             }) {
                 tracing::error!("Failed to render the application: {err:#}");
             }
-        }
+            next_refresh_duration(state, &ui)
+        };
 
-        std::thread::sleep(ui_refresh_duration);
+        std::thread::sleep(next_refresh_duration);
     }
+}
+
+fn next_refresh_duration(state: &SharedState, ui: &UIStateGuard) -> std::time::Duration {
+    let configured_refresh_duration = std::time::Duration::from_millis(
+        config::get_config()
+            .app_config
+            .app_refresh_duration_in_ms
+            .max(1),
+    );
+
+    if ui.last_interaction_at.elapsed() <= INTERACTION_GRACE_PERIOD {
+        return configured_refresh_duration;
+    }
+
+    #[cfg(feature = "streaming")]
+    if config::get_config().app_config.enable_audio_visualization
+        && state.is_local_streaming_active()
+    {
+        return configured_refresh_duration;
+    }
+
+    let player = state.player.read();
+    if player.playback_last_updated_time.is_none() {
+        return configured_refresh_duration.max(LOADING_REFRESH_DURATION);
+    }
+
+    if player
+        .buffered_playback
+        .as_ref()
+        .is_some_and(|playback| playback.is_playing)
+    {
+        return configured_refresh_duration.max(PLAYBACK_REFRESH_FLOOR);
+    }
+
+    IDLE_REFRESH_DURATION
 }
 
 // initialize the application's UI

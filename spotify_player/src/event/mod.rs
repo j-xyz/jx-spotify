@@ -22,6 +22,7 @@ use crate::{
 use crate::utils::map_join;
 use anyhow::{Context as _, Result};
 use crossterm::event::KeyCode;
+use std::time::Instant;
 
 use clipboard::{execute_copy_command, get_clipboard_content};
 use ratatui::widgets::ListState;
@@ -36,9 +37,14 @@ pub fn start_event_handler(state: &SharedState, client_pub: &flume::Sender<Clien
     while let Ok(event) = crossterm::event::read() {
         let _enter = tracing::info_span!("terminal_event", event = ?event).entered();
         if let Err(err) = match event {
-            crossterm::event::Event::Mouse(event) => handle_mouse_event(event, client_pub, state),
+            crossterm::event::Event::Mouse(event) => {
+                state.ui.lock().last_interaction_at = Instant::now();
+                handle_mouse_event(event, client_pub, state)
+            }
             crossterm::event::Event::Resize(columns, rows) => {
-                state.ui.lock().orientation = Orientation::from_size(columns, rows);
+                let mut ui = state.ui.lock();
+                ui.orientation = Orientation::from_size(columns, rows);
+                ui.last_interaction_at = Instant::now();
                 Ok(())
             }
             crossterm::event::Event::Key(event) => {
@@ -47,6 +53,7 @@ pub fn start_event_handler(state: &SharedState, client_pub: &flume::Sender<Clien
                     // context:
                     // - https://github.com/crossterm-rs/crossterm/issues/752
                     // - https://github.com/aome510/spotify-player/issues/136
+                    state.ui.lock().last_interaction_at = Instant::now();
                     handle_key_event(event, client_pub, state)
                 } else {
                     Ok(())

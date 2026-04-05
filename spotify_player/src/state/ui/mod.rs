@@ -4,6 +4,7 @@ use crate::{
     ui::{self, Orientation},
     utils::filtered_items_from_query,
 };
+use std::time::Instant;
 
 pub type UIStateGuard<'a> = parking_lot::MutexGuard<'a, UIState>;
 
@@ -29,6 +30,7 @@ pub struct UIState {
     pub theme: config::Theme,
     pub input_key_sequence: key::KeySequence,
     pub orientation: ui::Orientation,
+    pub last_interaction_at: Instant,
 
     pub history: Vec<PageState>,
     pub popup: Option<PopupState>,
@@ -125,6 +127,7 @@ impl Default for UIState {
                     Orientation::default()
                 }
             },
+            last_interaction_at: Instant::now(),
 
             history: vec![PageState::Library {
                 state: LibraryPageUIState::new(),

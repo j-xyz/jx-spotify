@@ -40,7 +40,7 @@ A sample `app.toml` is available at [examples/app.toml](../examples/app.toml).
 | `ap_port`                         | Spotify session connection port.                                                               | `None`                                                                 |
 | `proxy`                           | Spotify session connection proxy.                                                              | `None`                                                                 |
 | `theme`                           | Name of the theme to use.                                                                      | `default`                                                              |
-| `app_refresh_duration_in_ms`      | Interval (ms) between application refreshes.                                                   | `32`                                                                   |
+| `app_refresh_duration_in_ms`      | Base interval (ms) for interactive refreshes and active animations.                            | `32`                                                                   |
 | `playback_refresh_duration_in_ms` | Interval (ms) between playback refreshes.                                                      | `0`                                                                    |
 | `page_size_in_rows`               | Number of rows per page for navigation.                                                        | `20`                                                                   |
 | `enable_media_control`            | Enable media control support (requires `media-control` feature).                               | `true` (Linux), `false` (macOS/Windows)                                |
@@ -73,6 +73,7 @@ A sample `app.toml` is available at [examples/app.toml](../examples/app.toml).
 
 - By default, `spotify-player` uses [ncspot](https://github.com/hrkfdn/ncspot)'s client ID for compatibility with Spotify's API. See [this issue](https://github.com/aome510/spotify-player/issues/890) for details.
 - `ap_port` and `proxy` are passed to Librespot for session configuration. Librespot uses its defaults if unset.
+- `app_refresh_duration_in_ms` is used for active interaction and animated views. Playback-only screens are throttled to reduce idle CPU usage, and fully idle screens refresh once per second.
 - Setting a positive `app_refresh_duration_in_ms` increases API usage and may trigger rate limits. By default, `playback_refresh_duration_in_ms=0` refreshes playback only on events or commands.
 - `enable_streaming` accepts `Always`, `Never`, or `DaemonOnly`. For backward compatibility, `true`/`false` are also accepted.
 - `border_type`, `progress_bar_type`, and `progress_bar_position` accept only the values listed in the table above.
