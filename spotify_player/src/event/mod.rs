@@ -743,9 +743,10 @@ fn handle_global_command(
             client_pub.send(ClientRequest::GetBrowseCategories)?;
         }
         Command::PreviousPage => {
-            if ui.history.len() > 1 {
-                ui.history.pop();
+            if ui.popup.is_some() {
                 ui.popup = None;
+            } else if ui.history.len() > 1 {
+                ui.history.pop();
             }
         }
         Command::OpenSpotifyLinkFromClipboard => {

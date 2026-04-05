@@ -183,22 +183,6 @@ fn handle_search_tui_input(key: Key, ui: &mut UIStateGuard) -> Option<bool> {
         return Some(false);
     };
 
-    if matches!(key, Key::None(KeyCode::Backspace)) && line_input.is_empty() {
-        return Some(
-            if matches!(
-                state.mode,
-                SearchTuiMode::Playlist { .. }
-                    | SearchTuiMode::Album { .. }
-                    | SearchTuiMode::Artist { .. }
-            ) {
-                reset_search_tui_to_global(line_input, state);
-                true
-            } else {
-                false
-            },
-        );
-    }
-
     let effect = line_input.input(&key);
     if effect.is_some() {
         state.last_edited_at = Instant::now();

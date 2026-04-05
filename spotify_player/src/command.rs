@@ -359,7 +359,7 @@ impl Command {
             Self::BrowsePage => "go to the browse page",
             Self::Queue => "go to the queue page",
             Self::OpenCommandHelp => "go to the command help page",
-            Self::PreviousPage => "go to the previous page",
+            Self::PreviousPage => "go back or close the current popup",
             Self::OpenSpotifyLinkFromClipboard => "open a Spotify link from clipboard",
             Self::SortTrackByTitle => "sort the track table (if any) by track's title",
             Self::SortTrackByArtists => "sort the track table (if any) by track's artists",

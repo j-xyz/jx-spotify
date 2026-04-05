@@ -205,10 +205,6 @@ impl Default for KeymapConfig {
                     command: Command::PreviousPage,
                 },
                 Keymap {
-                    key_sequence: "backspace".into(),
-                    command: Command::PreviousPage,
-                },
-                Keymap {
                     key_sequence: "C-q".into(),
                     command: Command::PreviousPage,
                 },
@@ -234,7 +230,7 @@ impl Default for KeymapConfig {
                 },
                 Keymap {
                     key_sequence: "esc".into(),
-                    command: Command::ClosePopup,
+                    command: Command::PreviousPage,
                 },
                 Keymap {
                     key_sequence: "j".into(),

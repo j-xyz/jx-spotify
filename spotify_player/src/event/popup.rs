@@ -368,8 +368,7 @@ fn handle_key_sequence_for_search_popup(
                 }
                 crossterm::event::KeyCode::Backspace => {
                     if query.is_empty() {
-                        // close search popup when user presses backspace on empty search
-                        ui.popup = None;
+                        return Ok(true);
                     } else {
                         query.pop().unwrap();
                         ui.current_page_mut().select(0);
@@ -470,7 +469,7 @@ fn handle_command_for_list_popup(
                 on_choose_func(ui, current_id)?;
             }
         }
-        Command::ClosePopup => {
+        Command::ClosePopup | Command::PreviousPage => {
             on_close_func(ui);
         }
         _ => return Ok(false),
@@ -582,8 +581,7 @@ fn handle_key_sequence_for_playlist_search_popup(
                 }
                 crossterm::event::KeyCode::Backspace => {
                     if search_query.is_empty() {
-                        // Close playlist popup when user presses backspace on empty search
-                        ui.popup = None;
+                        return true;
                     } else {
                         search_query.pop();
                         // Reset selection to first item when search query changes
