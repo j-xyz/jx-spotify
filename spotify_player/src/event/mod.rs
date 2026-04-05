@@ -124,12 +124,6 @@ fn handle_key_event(
     let key: Key = event.into();
     let mut ui = state.ui.lock();
 
-    if matches!(key, Key::Ctrl(KeyCode::Char('g'))) && ui.reset_search_tui_home() {
-        ui.input_key_sequence.keys = vec![];
-        ui.count_prefix = None;
-        return Ok(());
-    }
-
     let mut key_sequence = ui.input_key_sequence.clone();
     key_sequence.keys.push(key);
 
@@ -736,6 +730,9 @@ fn handle_global_command(
                 current_query: String::new(),
                 state: SearchPageUIState::new(),
             });
+        }
+        Command::SearchTuiHome => {
+            ui.open_or_reset_search_tui_home();
         }
         Command::BrowsePage => {
             ui.new_page(PageState::Browse {

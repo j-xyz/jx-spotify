@@ -109,7 +109,7 @@ impl Default for KeymapConfig {
                 },
                 Keymap {
                     key_sequence: "C-g".into(),
-                    command: Command::JumpToHighlightTrackInContext,
+                    command: Command::SearchTuiHome,
                 },
                 Keymap {
                     key_sequence: "C-space".into(),
@@ -193,8 +193,16 @@ impl Default for KeymapConfig {
                     command: Command::SearchPage,
                 },
                 Keymap {
+                    key_sequence: "g i".into(),
+                    command: Command::SearchTuiHome,
+                },
+                Keymap {
                     key_sequence: "g b".into(),
                     command: Command::BrowsePage,
+                },
+                Keymap {
+                    key_sequence: "g u".into(),
+                    command: Command::PreviousPage,
                 },
                 Keymap {
                     key_sequence: "backspace".into(),
@@ -323,6 +331,10 @@ impl Default for KeymapConfig {
                 Keymap {
                     key_sequence: "N".into(),
                     command: Command::CreatePlaylist,
+                },
+                Keymap {
+                    key_sequence: "g h".into(),
+                    command: Command::JumpToHighlightTrackInContext,
                 },
                 Keymap {
                     key_sequence: "g c".into(),

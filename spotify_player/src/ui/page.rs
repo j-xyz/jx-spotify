@@ -407,7 +407,7 @@ fn search_tui_results_help(mode: &SearchTuiMode, ui: &UIStateGuard) -> Line<'sta
             Span::styled(" radio, ", plain),
             Span::styled("/", key),
             Span::styled(" search, ", plain),
-            Span::styled("Ctrl-G", key),
+            Span::styled("g i", key),
             Span::styled(" home.", plain),
         ]),
         SearchTuiMode::Playlist { .. }
@@ -422,8 +422,10 @@ fn search_tui_results_help(mode: &SearchTuiMode, ui: &UIStateGuard) -> Line<'sta
             Span::styled(" radio, ", plain),
             Span::styled("/", key),
             Span::styled(" search, ", plain),
-            Span::styled("Ctrl-G", key),
-            Span::styled(" home.", plain),
+            Span::styled("g i", key),
+            Span::styled(" home, ", plain),
+            Span::styled("g u", key),
+            Span::styled(" back.", plain),
         ]),
     }
 }
@@ -445,6 +447,8 @@ fn search_tui_search_help(mode: &SearchTuiMode, ui: &UIStateGuard) -> Line<'stat
             Span::styled(" playlists. ", plain),
             Span::styled("Enter", key),
             Span::styled(" results. ", plain),
+            Span::styled("g i", key),
+            Span::styled(" / ", plain),
             Span::styled("Ctrl-G", key),
             Span::styled(" home. ", plain),
             Span::styled("Ctrl-C", key),
@@ -456,6 +460,8 @@ fn search_tui_search_help(mode: &SearchTuiMode, ui: &UIStateGuard) -> Line<'stat
             Span::styled("Track filter. ", plain),
             Span::styled("Esc", key),
             Span::styled(" back. ", plain),
+            Span::styled("g i", key),
+            Span::styled(" / ", plain),
             Span::styled("Ctrl-G", key),
             Span::styled(" home. ", plain),
             Span::styled("Ctrl-C", key),
@@ -1109,7 +1115,7 @@ pub fn render_commands_help_page(
             },
             HelpRow {
                 command: "SearchTuiHome".to_string(),
-                shortcuts: "[C-g]".to_string(),
+                shortcuts: "[g i], [C-g]".to_string(),
                 description: "return to a fresh global search view".to_string(),
             },
             HelpRow {

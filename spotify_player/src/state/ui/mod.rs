@@ -65,25 +65,29 @@ impl UIState {
         self.popup = None;
     }
 
-    pub fn reset_search_tui_home(&mut self) -> bool {
-        let Some(search_tui_index) = self
+    pub fn open_or_reset_search_tui_home(&mut self) {
+        let search_tui_index = self
             .history
             .iter()
-            .position(|page| matches!(page, PageState::SearchTui { .. }))
-        else {
-            return false;
-        };
+            .position(|page| matches!(page, PageState::SearchTui { .. }));
 
-        self.history.truncate(search_tui_index + 1);
+        if let Some(search_tui_index) = search_tui_index {
+            self.history.truncate(search_tui_index + 1);
+        } else {
+            self.history.push(PageState::SearchTui {
+                line_input: crate::ui::single_line_input::LineInput::default(),
+                state: SearchTuiPageUIState::new(),
+            });
+        }
+
         self.popup = None;
 
         let PageState::SearchTui { line_input, state } = self.current_page_mut() else {
-            return false;
+            return;
         };
 
         *line_input = crate::ui::single_line_input::LineInput::default();
         *state = SearchTuiPageUIState::new();
-        true
     }
 
     /// Return whether there exists a focused popup.
