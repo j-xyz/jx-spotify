@@ -144,11 +144,7 @@ fn render_application(frame: &mut Frame, state: &SharedState, ui: &mut UIStateGu
     // render playback window before other popups and windows to ensure nothing is rendered on top
     // of the playback window, which is to avoid "duplicated images" issue
     // See: https://github.com/aome510/spotify-player/issues/498
-    let rect = if playback::uses_inline_playback(ui) {
-        rect
-    } else {
-        playback::render_playback_window(frame, state, ui, rect)
-    };
+    let rect = playback::render_playback_window(frame, state, ui, rect);
 
     let rect = popup::render_shortcut_help_popup(frame, ui, rect);
 

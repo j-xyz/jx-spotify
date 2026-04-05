@@ -1,5 +1,5 @@
 use super::{
-    config, utils, Alignment, Constraint, Frame, Layout, Line, Modifier, PageType, Paragraph,
+    config, utils, Alignment, Constraint, Frame, Layout, Line, Modifier, Paragraph,
     PlaybackMetadata, Rect, SharedState, Span, Text, UIStateGuard, Wrap,
 };
 #[cfg(feature = "image")]
@@ -22,33 +22,17 @@ pub fn render_playback_window(
     ui: &mut UIStateGuard,
     rect: Rect,
 ) -> Rect {
-    let inline_playback = uses_inline_playback(ui);
-    let (rect, other_rect) = if inline_playback {
-        (rect, Rect::default())
-    } else {
-        split_rect_for_playback_window(state, rect)
-    };
+    let (rect, other_rect) = split_rect_for_playback_window(state, rect);
     let player = state.player.read();
 
-    let rect = if inline_playback {
-        utils::render_subtle_panel(
-            frame,
-            &ui.theme,
-            rect,
-            "playback",
-            Some(playback_meta_line(ui, &player)),
-            true,
-        )
-    } else {
-        utils::render_panel(
-            frame,
-            &ui.theme,
-            rect,
-            "playback",
-            Some(playback_meta_line(ui, &player)),
-            true,
-        )
-    };
+    let rect = utils::render_panel(
+        frame,
+        &ui.theme,
+        rect,
+        "playback",
+        Some(playback_meta_line(ui, &player)),
+        true,
+    );
     if let Some(ref playback) = player.playback {
         if let Some(item) = &playback.item {
             // Carve off the visualization rows here, inside the active-playback
@@ -204,14 +188,6 @@ pub fn render_playback_window(
     }
 
     other_rect
-}
-
-pub fn uses_inline_playback(ui: &UIStateGuard) -> bool {
-    let page_type = ui.current_page().page_type();
-    page_type == PageType::SearchTui
-        || (page_type == PageType::CommandHelp
-            && ui.history.len() > 1
-            && ui.history[ui.history.len() - 2].page_type() == PageType::SearchTui)
 }
 
 fn playback_meta_line(ui: &UIStateGuard, player: &crate::state::PlayerState) -> Line<'static> {

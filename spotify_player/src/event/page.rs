@@ -205,15 +205,14 @@ fn handle_search_tui_escape(ui: &mut UIStateGuard) -> Result<bool> {
         reset_search_tui_to_global(line_input, state);
     } else if !line_input.is_empty() {
         *line_input = LineInput::default();
-        state.focus = SearchTuiFocus::Search;
+        state.focus = SearchTuiFocus::Results;
         state.last_dispatched_query = None;
         state.last_edited_at = Instant::now();
         state.result_list = Default::default();
+    } else if state.focus == SearchTuiFocus::Search {
+        state.focus = SearchTuiFocus::Results;
     } else {
-        state.focus = match state.focus {
-            SearchTuiFocus::Search => SearchTuiFocus::Results,
-            SearchTuiFocus::Results => SearchTuiFocus::Search,
-        };
+        return Ok(false);
     }
 
     Ok(true)
@@ -222,7 +221,7 @@ fn handle_search_tui_escape(ui: &mut UIStateGuard) -> Result<bool> {
 fn reset_search_tui_to_global(line_input: &mut LineInput, state: &mut SearchTuiPageUIState) {
     *line_input = LineInput::default();
     state.mode = SearchTuiMode::Global;
-    state.focus = SearchTuiFocus::Search;
+    state.focus = SearchTuiFocus::Results;
     state.last_dispatched_query = None;
     state.last_edited_at = Instant::now();
     state.result_list = Default::default();

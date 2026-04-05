@@ -324,7 +324,7 @@ impl SearchTuiPageUIState {
         Self {
             result_list: TableState::default(),
             mode: SearchTuiMode::Global,
-            focus: SearchTuiFocus::Search,
+            focus: SearchTuiFocus::Results,
             last_dispatched_query: None,
             last_edited_at: Instant::now(),
         }

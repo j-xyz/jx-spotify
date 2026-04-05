@@ -328,16 +328,24 @@ pub fn render_search_tui_page(
         }
     };
 
-    let chunks = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Fill(0),
-        Constraint::Length(1),
-        Constraint::Length(5),
-        Constraint::Length(1),
-        Constraint::Length(1),
-    ])
-    .split(rect);
+    let search_visible = focus == SearchTuiFocus::Search || !query.is_empty();
+    let chunks = if search_visible {
+        Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Fill(0),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(rect)
+    } else {
+        Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Fill(0),
+        ])
+        .split(rect)
+    };
 
     render_search_tui_header(frame, chunks[0], &mode, ui);
 
@@ -353,16 +361,17 @@ pub fn render_search_tui_page(
         ui,
     );
     render_search_tui_results(frame, chunks[2], items, is_active, focus, ui);
-    super::playback::render_playback_window(frame, state, ui, chunks[4]);
 
-    render_search_tui_search_header(frame, chunks[5], &mode, focus, ui);
+    if search_visible {
+        render_search_tui_search_header(frame, chunks[3], focus, ui);
 
-    let search_box_style = ui.theme.playback_progress_bar_unfilled();
-    frame.render_widget(Block::default().style(search_box_style), chunks[6]);
-    frame.render_widget(
-        line_input.widget(is_active && focus == SearchTuiFocus::Search),
-        chunks[6],
-    );
+        let search_box_style = ui.theme.playback_progress_bar_unfilled();
+        frame.render_widget(Block::default().style(search_box_style), chunks[4]);
+        frame.render_widget(
+            line_input.widget(is_active && focus == SearchTuiFocus::Search),
+            chunks[4],
+        );
+    }
 }
 
 fn render_search_tui_label(
@@ -391,6 +400,9 @@ fn render_search_tui_header(
         SearchTuiMode::Global => Line::from(vec![
             Span::styled("global", ui.theme.playlist_desc()),
             Span::styled(" · ", ui.theme.playback_metadata()),
+            Span::styled("/", key),
+            Span::styled(" search", ui.theme.playback_metadata()),
+            Span::styled(" · ", ui.theme.playback_metadata()),
             Span::styled("?", key),
             Span::styled(" help", ui.theme.playback_metadata()),
         ]),
@@ -398,6 +410,9 @@ fn render_search_tui_header(
         | SearchTuiMode::Album { .. }
         | SearchTuiMode::Artist { .. } => Line::from(vec![
             Span::styled("drill-in", ui.theme.playlist_desc()),
+            Span::styled(" · ", ui.theme.playback_metadata()),
+            Span::styled("/", key),
+            Span::styled(" search", ui.theme.playback_metadata()),
             Span::styled(" · ", ui.theme.playback_metadata()),
             Span::styled("?", key),
             Span::styled(" help", ui.theme.playback_metadata()),
@@ -409,7 +424,6 @@ fn render_search_tui_header(
 fn render_search_tui_search_header(
     frame: &mut Frame,
     rect: Rect,
-    _mode: &SearchTuiMode,
     focus: SearchTuiFocus,
     ui: &UIStateGuard,
 ) {
@@ -991,7 +1005,7 @@ pub fn render_lyrics_page(
 
 pub fn render_commands_help_page(
     frame: &mut Frame,
-    state: &SharedState,
+    _state: &SharedState,
     ui: &mut UIStateGuard,
     rect: Rect,
 ) {
@@ -1095,28 +1109,14 @@ pub fn render_commands_help_page(
     };
 
     // 2. Construct the page's layout
-    let rect = if super::playback::uses_inline_playback(ui) {
-        let chunks = Layout::vertical([Constraint::Fill(0), Constraint::Length(6)]).split(rect);
-        let rect = utils::render_panel(
-            frame,
-            &ui.theme,
-            chunks[0],
-            "help",
-            Some(Line::from(format!("{} items", filtered_len))),
-            true,
-        );
-        super::playback::render_playback_window(frame, state, ui, chunks[1]);
-        rect
-    } else {
-        utils::render_panel(
-            frame,
-            &ui.theme,
-            rect,
-            "help",
-            Some(Line::from(format!("{} items", filtered_len))),
-            true,
-        )
-    };
+    let rect = utils::render_panel(
+        frame,
+        &ui.theme,
+        rect,
+        "help",
+        Some(Line::from(format!("{} items", filtered_len))),
+        true,
+    );
 
     // 3. Construct the page's widget
     let help_table = Table::new(
