@@ -298,8 +298,6 @@ pub fn render_search_tui_page(
     ui: &mut UIStateGuard,
     rect: Rect,
 ) {
-    let data = state.data.read();
-
     let (mode, line_input, focus) = match ui.current_page() {
         PageState::SearchTui { state, line_input } => {
             (state.mode.clone(), line_input.clone(), state.focus)
@@ -308,23 +306,26 @@ pub fn render_search_tui_page(
     };
 
     let query = line_input.get_text();
-    let (title, items): (&str, Vec<SearchTuiDisplayRow>) = match &mode {
-        SearchTuiMode::Global => (
-            "Search Results",
-            search_tui::build_items(&data, &mode, &query)
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-        ),
-        SearchTuiMode::Playlist { title, .. }
-        | SearchTuiMode::Album { title, .. }
-        | SearchTuiMode::Artist { title, .. } => (
-            title.as_str(),
-            search_tui::build_context_tracks(&data, &mode, &query)
-                .into_iter()
-                .map(search_tui_playlist_row)
-                .collect::<Vec<_>>(),
-        ),
+    let (title, items): (String, Vec<SearchTuiDisplayRow>) = {
+        let data = state.data.read();
+        match &mode {
+            SearchTuiMode::Global => (
+                "Search Results".to_string(),
+                search_tui::build_items(&data, &mode, &query)
+                    .into_iter()
+                    .map(Into::into)
+                    .collect(),
+            ),
+            SearchTuiMode::Playlist { title, .. }
+            | SearchTuiMode::Album { title, .. }
+            | SearchTuiMode::Artist { title, .. } => (
+                title.clone(),
+                search_tui::build_context_tracks(&data, &mode, &query)
+                    .into_iter()
+                    .map(search_tui_playlist_row)
+                    .collect::<Vec<_>>(),
+            ),
+        }
     };
 
     let chunks = Layout::vertical([
