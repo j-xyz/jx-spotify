@@ -340,11 +340,14 @@ pub fn render_search_tui_page(
 
     render_search_tui_header(frame, chunks[0], &mode, ui);
 
-    let results_title = format!("{title}  {} items", items.len());
     render_search_tui_label(
         frame,
         chunks[1],
-        &results_title,
+        &title,
+        Some(Line::from(vec![Span::styled(
+            format!("{} items", items.len()),
+            ui.theme.playback_metadata(),
+        )])),
         focus == SearchTuiFocus::Results,
         ui,
     );
@@ -365,18 +368,11 @@ fn render_search_tui_label(
     frame: &mut Frame,
     rect: Rect,
     title: &str,
+    meta: Option<Line<'static>>,
     is_active: bool,
     ui: &UIStateGuard,
 ) {
-    let title_style = if is_active {
-        ui.theme.page_desc()
-    } else {
-        ui.theme.playback_metadata()
-    };
-    frame.render_widget(
-        Paragraph::new(Span::styled(title.to_lowercase(), title_style)),
-        rect,
-    );
+    utils::render_section_header(frame, &ui.theme, rect, title, meta, is_active);
 }
 
 fn search_tui_key_style(ui: &UIStateGuard) -> Style {
@@ -393,7 +389,7 @@ fn render_search_tui_header(
     let meta = match mode {
         SearchTuiMode::Global => Line::from(vec![
             Span::styled("global", ui.theme.playlist_desc()),
-            Span::raw("  "),
+            Span::styled(" · ", ui.theme.playback_metadata()),
             Span::styled("?", key),
             Span::styled(" help", ui.theme.playback_metadata()),
         ]),
@@ -401,7 +397,7 @@ fn render_search_tui_header(
         | SearchTuiMode::Album { .. }
         | SearchTuiMode::Artist { .. } => Line::from(vec![
             Span::styled("drill-in", ui.theme.playlist_desc()),
-            Span::raw("  "),
+            Span::styled(" · ", ui.theme.playback_metadata()),
             Span::styled("?", key),
             Span::styled(" help", ui.theme.playback_metadata()),
         ]),
@@ -416,7 +412,14 @@ fn render_search_tui_search_header(
     focus: SearchTuiFocus,
     ui: &UIStateGuard,
 ) {
-    render_search_tui_label(frame, rect, "Search", focus == SearchTuiFocus::Search, ui);
+    render_search_tui_label(
+        frame,
+        rect,
+        "Search",
+        None,
+        focus == SearchTuiFocus::Search,
+        ui,
+    );
 }
 
 fn render_search_tui_results(

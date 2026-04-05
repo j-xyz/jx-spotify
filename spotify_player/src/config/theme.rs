@@ -62,6 +62,7 @@ struct Palette {
 
 #[derive(Clone, Debug, Default, Deserialize)]
 struct ComponentStyle {
+    subtle_panel: Option<Style>,
     playback_status: Option<Style>,
     playback_track: Option<Style>,
     playback_artists: Option<Style>,
@@ -175,6 +176,14 @@ impl Theme {
             style = style.fg(c.color);
         }
         style
+    }
+
+    pub fn subtle_panel(&self) -> style::Style {
+        self.component_style
+            .subtle_panel
+            .as_ref()
+            .map(|style| style.style(&self.palette))
+            .unwrap_or_else(|| self.app())
     }
 
     pub fn selection(&self, is_active: bool) -> style::Style {

@@ -8,6 +8,10 @@ pub fn panel_style(theme: &config::Theme) -> Style {
     theme.app()
 }
 
+pub fn subtle_panel_style(theme: &config::Theme) -> Style {
+    theme.subtle_panel()
+}
+
 pub fn render_panel<'a>(
     frame: &mut Frame,
     theme: &config::Theme,
@@ -17,6 +21,21 @@ pub fn render_panel<'a>(
     is_active: bool,
 ) -> Rect {
     frame.render_widget(Block::default().style(panel_style(theme)), rect);
+
+    let chunks = Layout::vertical([Constraint::Length(1), Constraint::Fill(0)]).split(rect);
+    render_section_header(frame, theme, chunks[0], title, meta, is_active);
+    chunks[1]
+}
+
+pub fn render_subtle_panel<'a>(
+    frame: &mut Frame,
+    theme: &config::Theme,
+    rect: Rect,
+    title: &str,
+    meta: Option<Line<'a>>,
+    is_active: bool,
+) -> Rect {
+    frame.render_widget(Block::default().style(subtle_panel_style(theme)), rect);
 
     let chunks = Layout::vertical([Constraint::Length(1), Constraint::Fill(0)]).split(rect);
     render_section_header(frame, theme, chunks[0], title, meta, is_active);

@@ -31,7 +31,7 @@ pub fn render_playback_window(
     let player = state.player.read();
 
     let rect = if inline_playback {
-        utils::render_panel(
+        utils::render_subtle_panel(
             frame,
             &ui.theme,
             rect,
