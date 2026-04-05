@@ -119,9 +119,7 @@ fn handle_key_sequence_for_search_tui_page(
         }
         Key::None(KeyCode::PageUp) => Some(Command::PageSelectPreviousOrScrollUp),
         Key::None(KeyCode::PageDown) => Some(Command::PageSelectNextOrScrollDown),
-        Key::None(KeyCode::Home) | Key::None(KeyCode::Char('g')) => {
-            Some(Command::SelectFirstOrScrollToTop)
-        }
+        Key::None(KeyCode::Home) => Some(Command::SelectFirstOrScrollToTop),
         Key::None(KeyCode::End) | Key::None(KeyCode::Char('G')) => {
             Some(Command::SelectLastOrScrollToBottom)
         }

@@ -161,7 +161,7 @@ impl Default for KeymapConfig {
                     command: Command::BrowseUserSavedAlbums,
                 },
                 Keymap {
-                    key_sequence: "g space".into(),
+                    key_sequence: "g c".into(),
                     command: Command::CurrentlyPlayingContextPage,
                 },
                 Keymap {
@@ -333,7 +333,7 @@ impl Default for KeymapConfig {
                     command: Command::JumpToHighlightTrackInContext,
                 },
                 Keymap {
-                    key_sequence: "g c".into(),
+                    key_sequence: "g p".into(),
                     command: Command::JumpToCurrentTrackInContext,
                 },
                 Keymap {

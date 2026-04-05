@@ -333,7 +333,7 @@ impl Command {
                 "select the last item in a list/table or scroll to the bottom"
             }
             Self::ChooseSelected => "choose the selected item and act on it",
-            Self::JumpToCurrentTrackInContext => "jump to the current track in the context",
+            Self::JumpToCurrentTrackInContext => "jump to the currently playing track in the context",
             Self::RefreshPlayback => "manually refresh the current playback",
             Self::ShowActionsOnSelectedItem => "open a popup showing actions on a selected item",
             Self::ShowActionsOnCurrentTrack => "open a popup showing actions on the current track",
@@ -348,7 +348,7 @@ impl Command {
             Self::BrowseUserPlaylists => "open a popup for browsing user's playlists",
             Self::BrowseUserFollowedArtists => "open a popup for browsing user's followed artists",
             Self::BrowseUserSavedAlbums => "open a popup for browsing user's saved albums",
-            Self::CurrentlyPlayingContextPage => "go to the currently playing context page",
+            Self::CurrentlyPlayingContextPage => "go to the current playback context page",
             Self::TopTrackPage => "go to the user top track page",
             Self::RecentlyPlayedTrackPage => "go to the user recently played track page",
             Self::LikedTrackPage => "go to the user liked track page",
