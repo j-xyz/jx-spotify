@@ -7,7 +7,7 @@ pub use rspotify::model::{
 };
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use std::fmt::{Display, Write};
+use std::fmt::Display;
 
 /// A trait similar to Display but with bidirectional text support
 pub trait BidiDisplay: Display {
@@ -229,67 +229,6 @@ pub struct PlaylistFolderNode {
 pub struct Category {
     pub id: String,
     pub name: String,
-}
-
-impl Context {
-    /// gets the context's description
-    pub fn description(&self) -> String {
-        match self {
-            Context::Album {
-                ref album,
-                ref tracks,
-            } => format!(
-                "{} | {} | {} songs | {}",
-                album.name,
-                album.release_date,
-                tracks.len(),
-                play_time(tracks),
-            ),
-            Context::Playlist {
-                ref playlist,
-                tracks,
-            } => format!(
-                "{} | {} | {} songs | {}",
-                playlist.name,
-                playlist.owner.0,
-                tracks.len(),
-                play_time(tracks),
-            ),
-            Context::Artist { ref artist, .. } => artist.name.clone(),
-            Context::Tracks { desc, tracks } => {
-                format!("{} | {} songs | {}", desc, tracks.len(), play_time(tracks))
-            }
-            Context::Show {
-                ref show,
-                ref episodes,
-            } => format!("{} | {} episodes", show.name, episodes.len()),
-        }
-    }
-}
-
-fn play_time(tracks: &[Track]) -> String {
-    let duration = tracks
-        .iter()
-        .map(|t| t.duration)
-        .sum::<std::time::Duration>();
-
-    let mut output = String::new();
-
-    let seconds = duration.as_secs() % 60;
-    let minutes = (duration.as_secs() / 60) % 60;
-    let hours = duration.as_secs() / 3600;
-
-    if hours > 0 {
-        write!(output, "{hours}h ").unwrap();
-    }
-
-    if minutes > 0 {
-        write!(output, "{minutes}m ").unwrap();
-    }
-
-    write!(output, "{seconds}s").unwrap();
-
-    output
 }
 
 impl ContextId {

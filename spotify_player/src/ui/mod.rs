@@ -12,10 +12,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{
-        Block, Cell, Gauge, LineGauge, List, ListItem, ListState, Paragraph, Row, Table,
-        TableState, Wrap,
-    },
+    widgets::{Block, Cell, List, ListItem, ListState, Paragraph, Row, Table, TableState, Wrap},
     Frame,
 };
 

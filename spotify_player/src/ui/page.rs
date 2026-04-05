@@ -557,15 +557,17 @@ pub fn render_context_page(
         return;
     };
 
+    let data = state.data.read();
+    let (panel_title, panel_meta) = match id
+        .as_ref()
+        .and_then(|id| data.caches.context.get(&id.uri()))
+    {
+        Some(context) => context_panel_title_meta(context),
+        None => (context_page_type.title(), None),
+    };
+
     // 2. Construct the page's layout
-    let rect = utils::render_panel(
-        frame,
-        &ui.theme,
-        rect,
-        &context_page_type.title(),
-        None,
-        true,
-    );
+    let rect = utils::render_panel(frame, &ui.theme, rect, &panel_title, panel_meta, true);
 
     // 3+4. Construct and render the page's widgets
     let Some(id) = id else {
@@ -576,99 +578,117 @@ pub fn render_context_page(
         return;
     };
 
-    let data = state.data.read();
     match data.caches.context.get(&id.uri()) {
-        Some(context) => {
-            // render context description
-            let chunks = Layout::vertical([Constraint::Length(1), Constraint::Fill(0)]).split(rect);
-
-            let description = if let Context::Playlist { playlist, .. } = context {
-                format!(
-                    "{} | {}",
-                    context.description(),
-                    if data.user_data.is_followed_playlist(playlist) {
-                        "Followed"
-                    } else {
-                        "Not Followed"
-                    }
-                )
-            } else {
-                context.description()
-            };
-
-            frame.render_widget(
-                Paragraph::new(description).style(ui.theme.page_desc()),
-                chunks[0],
-            );
-            let rect = chunks[1];
-
-            match context {
-                Context::Artist {
-                    top_tracks,
-                    albums,
-                    related_artists,
-                    ..
-                } => {
-                    render_artist_context_page_windows(
-                        is_active,
-                        frame,
-                        state,
-                        ui,
-                        &data,
-                        rect,
-                        (top_tracks, albums, related_artists),
-                    );
-                }
-                Context::Playlist { tracks, playlist } => {
-                    let rect = if playlist.desc.is_empty() {
-                        rect
-                    } else {
-                        let chunks = Layout::vertical([Constraint::Length(1), Constraint::Fill(0)])
-                            .split(rect);
-                        frame.render_widget(
-                            Paragraph::new(playlist.desc.clone()).style(ui.theme.playlist_desc()),
-                            chunks[0],
-                        );
-                        chunks[1]
-                    };
-
-                    render_track_table(
-                        frame,
-                        rect,
-                        is_active,
-                        state,
-                        ui.search_filtered_items(tracks),
-                        ui,
-                        &data,
-                    );
-                }
-                Context::Tracks { tracks, .. } | Context::Album { tracks, .. } => {
-                    render_track_table(
-                        frame,
-                        rect,
-                        is_active,
-                        state,
-                        ui.search_filtered_items(tracks),
-                        ui,
-                        &data,
-                    );
-                }
-                Context::Show { episodes, .. } => {
-                    render_episode_table(
-                        frame,
-                        rect,
-                        is_active,
-                        state,
-                        ui.search_filtered_items(episodes),
-                        ui,
-                    );
-                }
+        Some(context) => match context {
+            Context::Artist {
+                top_tracks,
+                albums,
+                related_artists,
+                ..
+            } => {
+                render_artist_context_page_windows(
+                    is_active,
+                    frame,
+                    state,
+                    ui,
+                    &data,
+                    rect,
+                    (top_tracks, albums, related_artists),
+                );
             }
-        }
+            Context::Playlist { tracks, playlist } => {
+                let rect = if playlist.desc.is_empty() {
+                    rect
+                } else {
+                    let chunks =
+                        Layout::vertical([Constraint::Length(1), Constraint::Fill(0)]).split(rect);
+                    frame.render_widget(
+                        Paragraph::new(playlist.desc.clone()).style(ui.theme.playlist_desc()),
+                        chunks[0],
+                    );
+                    chunks[1]
+                };
+
+                render_track_table(
+                    frame,
+                    rect,
+                    is_active,
+                    state,
+                    ui.search_filtered_items(tracks),
+                    ui,
+                    &data,
+                );
+            }
+            Context::Tracks { tracks, .. } | Context::Album { tracks, .. } => {
+                render_track_table(
+                    frame,
+                    rect,
+                    is_active,
+                    state,
+                    ui.search_filtered_items(tracks),
+                    ui,
+                    &data,
+                );
+            }
+            Context::Show { episodes, .. } => {
+                render_episode_table(
+                    frame,
+                    rect,
+                    is_active,
+                    state,
+                    ui.search_filtered_items(episodes),
+                    ui,
+                );
+            }
+        },
         None => {
             frame.render_widget(Paragraph::new("Loading..."), rect);
         }
     }
+}
+
+fn context_panel_title_meta(context: &Context) -> (String, Option<Line<'static>>) {
+    match context {
+        Context::Playlist { playlist, tracks } => (
+            playlist.name.clone(),
+            Some(Line::from(format!(
+                "{}  {} songs  {}",
+                playlist.owner.0,
+                tracks.len(),
+                context_play_time(tracks),
+            ))),
+        ),
+        Context::Album { album, tracks } => (
+            album.name.clone(),
+            Some(Line::from(format!(
+                "{}  {} songs  {}",
+                album.release_date,
+                tracks.len(),
+                context_play_time(tracks),
+            ))),
+        ),
+        Context::Artist { artist, .. } => (artist.name.clone(), None),
+        Context::Tracks { desc, tracks } => (
+            desc.clone(),
+            Some(Line::from(format!(
+                "{} songs  {}",
+                tracks.len(),
+                context_play_time(tracks),
+            ))),
+        ),
+        Context::Show { show, episodes } => (
+            show.name.clone(),
+            Some(Line::from(format!("{} episodes", episodes.len()))),
+        ),
+    }
+}
+
+fn context_play_time(tracks: &[Track]) -> String {
+    let duration = tracks
+        .iter()
+        .map(|track| track.duration)
+        .sum::<std::time::Duration>();
+    format_duration(&chrono::Duration::from_std(duration).unwrap_or_default())
 }
 
 pub fn render_library_page(

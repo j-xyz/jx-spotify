@@ -1,7 +1,6 @@
 use super::{
-    config, utils, Alignment, Constraint, Frame, Gauge, Layout, Line, LineGauge, Modifier,
-    PageType, Paragraph, PlaybackMetadata, Rect, SharedState, Span, Style, Text, UIStateGuard,
-    Wrap,
+    config, utils, Alignment, Constraint, Frame, Layout, Line, Modifier, PageType, Paragraph,
+    PlaybackMetadata, Rect, SharedState, Span, Text, UIStateGuard, Wrap,
 };
 #[cfg(feature = "image")]
 use crate::state::ImageRenderInfo;
@@ -17,7 +16,6 @@ use rspotify::model::Id;
 /// - track title, artists, album
 /// - playback metadata (playing state, repeat state, shuffle state, volume, device, etc)
 /// - cover image (if `image` feature is enabled)
-/// - playback progress bar
 pub fn render_playback_window(
     frame: &mut Frame,
     state: &SharedState,
@@ -72,25 +70,11 @@ pub fn render_playback_window(
                 }
             };
 
-            let (metadata_rect, progress_bar_rect) = {
+            let metadata_rect = {
                 // Render the track's cover image if `image` feature is enabled
                 #[cfg(feature = "image")]
                 {
-                    let configs = config::get_config();
-                    // Split the allocated rectangle into `metadata_rect`, `cover_img_rect` and `progress_bar_rect`
-                    let (metadata_rect, cover_img_rect, progress_bar_rect) =
-                        match configs.app_config.progress_bar_position {
-                            config::ProgressBarPosition::Bottom => {
-                                let ver_chunks = split_rect_for_progress_bar(rect); // rect, progress_bar_rect
-                                let hor_chunks = split_rect_for_cover_img(ver_chunks.0); // cover_img_rect, metadata_rect
-                                (hor_chunks.1, hor_chunks.0, ver_chunks.1)
-                            }
-                            config::ProgressBarPosition::Right => {
-                                let hor_chunks = split_rect_for_cover_img(rect); // cover_img_rect, rect
-                                let ver_chunks = split_rect_for_progress_bar(hor_chunks.1); // metadata_rect, progress_bar_rect
-                                (ver_chunks.0, hor_chunks.0, ver_chunks.1)
-                            }
-                        };
+                    let (cover_img_rect, metadata_rect) = split_rect_for_cover_img(rect);
 
                     let url = match item {
                         rspotify::model::PlayableItem::Track(track) => {
@@ -148,36 +132,23 @@ pub fn render_playback_window(
                             }
                         }
                     }
-                    (metadata_rect, progress_bar_rect)
+                    metadata_rect
                 }
 
                 #[cfg(not(feature = "image"))]
                 {
-                    let chunks = split_rect_for_progress_bar(rect);
-                    (chunks.0, chunks.1)
+                    rect
                 }
             };
 
             if let Some(ref playback) = player.buffered_playback {
-                let playback_text = construct_playback_text(ui, state, item, playback);
+                let playback_progress = player.playback_progress();
+                let playback_text =
+                    construct_playback_text(ui, state, item, playback, playback_progress);
                 let playback_desc = Paragraph::new(playback_text);
                 frame.render_widget(playback_desc, metadata_rect);
             }
-
-            let duration = match item {
-                rspotify::model::PlayableItem::Track(track) => track.duration,
-                rspotify::model::PlayableItem::Episode(episode) => episode.duration,
-                rspotify::model::PlayableItem::Unknown(item) => {
-                    log::warn!("Unknown playback item: {item:?}");
-                    return other_rect;
-                }
-            };
-
-            let progress = std::cmp::min(
-                player.playback_progress().expect("non-empty playback"),
-                duration,
-            );
-            render_playback_progress_bar(frame, ui, progress, duration, progress_bar_rect);
+            ui.playback_progress_bar_rect = Rect::default();
             #[cfg(feature = "streaming")]
             if let Some(vis_r) = vis_rect {
                 super::streaming::render_audio_visualization(frame, state, vis_r);
@@ -254,11 +225,6 @@ fn playback_meta_line(ui: &UIStateGuard, player: &crate::state::PlayerState) -> 
     Line::from(vec![Span::styled(device_name, ui.theme.playlist_desc())])
 }
 
-fn split_rect_for_progress_bar(rect: Rect) -> (Rect, Rect) {
-    let chunks = Layout::vertical([Constraint::Fill(0), Constraint::Length(1)]).split(rect);
-    (chunks[0], chunks[1])
-}
-
 #[cfg(feature = "image")]
 fn split_rect_for_cover_img(rect: Rect) -> (Rect, Rect) {
     let configs = config::get_config();
@@ -295,6 +261,7 @@ fn construct_playback_text(
     state: &SharedState,
     playable: &rspotify::model::PlayableItem,
     playback: &PlaybackMetadata,
+    playback_progress: Option<chrono::Duration>,
 ) -> Text<'static> {
     // Construct a "styled" text (`playback_text`) from playback's data
     // based on a user-configurable format string (app_config.playback_format)
@@ -427,12 +394,25 @@ fn construct_playback_text(
                 } else {
                     format!("{}%", playback.volume.unwrap_or_default())
                 };
+                let duration = match playable {
+                    rspotify::model::PlayableItem::Track(track) => track.duration,
+                    rspotify::model::PlayableItem::Episode(episode) => episode.duration,
+                    rspotify::model::PlayableItem::Unknown(_) => chrono::Duration::zero(),
+                };
+                let progress = playback_progress
+                    .map(|progress| std::cmp::min(progress, duration))
+                    .unwrap_or_default();
+                let time_value = format!(
+                    "{}/{}",
+                    crate::utils::format_duration(&progress),
+                    crate::utils::format_duration(&duration),
+                );
                 let active_value_style = ui.theme.page_desc().add_modifier(Modifier::BOLD);
                 let inactive_value_style = ui.theme.playback_metadata();
                 let label_style = ui.theme.playback_metadata();
 
-                let mut metadata_spans = vec![];
-                let mut first = true;
+                let mut metadata_spans = vec![Span::styled(time_value, active_value_style)];
+                let mut first = false;
 
                 for field in &configs.app_config.playback_metadata_fields {
                     let (label, value, enabled) = match field.as_str() {
@@ -482,53 +462,6 @@ fn construct_playback_text(
     }
 
     playback_text
-}
-
-fn render_playback_progress_bar(
-    frame: &mut Frame,
-    ui: &mut UIStateGuard,
-    progress: chrono::Duration,
-    duration: chrono::Duration,
-    rect: Rect,
-) {
-    // Negative numbers can sometimes appear from progress.num_seconds() so this stops
-    // them coming through into the ratios
-    let ratio = (progress.num_seconds() as f64 / duration.num_seconds() as f64).clamp(0.0, 1.0);
-
-    match config::get_config().app_config.progress_bar_type {
-        config::ProgressBarType::Line => frame.render_widget(
-            LineGauge::default()
-                .filled_style(ui.theme.playback_progress_bar())
-                .unfilled_style(ui.theme.playback_progress_bar_unfilled())
-                .ratio(ratio)
-                .label(Span::styled(
-                    format!(
-                        "{}/{}",
-                        crate::utils::format_duration(&progress),
-                        crate::utils::format_duration(&duration),
-                    ),
-                    Style::default().add_modifier(Modifier::BOLD),
-                )),
-            rect,
-        ),
-        config::ProgressBarType::Rectangle => frame.render_widget(
-            Gauge::default()
-                .gauge_style(ui.theme.playback_progress_bar())
-                .ratio(ratio)
-                .label(Span::styled(
-                    format!(
-                        "{}/{}",
-                        crate::utils::format_duration(&progress),
-                        crate::utils::format_duration(&duration),
-                    ),
-                    Style::default().add_modifier(Modifier::BOLD),
-                )),
-            rect,
-        ),
-    }
-
-    // update the progress bar's position stored inside the UI state
-    ui.playback_progress_bar_rect = rect;
 }
 
 #[cfg(feature = "image")]
@@ -588,12 +521,7 @@ fn split_rect_for_playback_window(state: &SharedState, rect: Rect) -> (Rect, Rec
             0
         };
 
-    // add lines for top/bottom borders depending on the progress bar's position
-    let num_lines = match configs.app_config.progress_bar_position {
-        config::ProgressBarPosition::Bottom => 2,
-        config::ProgressBarPosition::Right => 1,
-    };
-    let playback_width = (playback_width + num_lines) as u16;
+    let playback_width = (playback_width + 1) as u16;
 
     let chunks =
         Layout::vertical([Constraint::Fill(0), Constraint::Length(playback_width)]).split(rect);
