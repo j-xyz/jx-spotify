@@ -164,8 +164,7 @@ fn handle_page_change_event(
             // To avoid making too many requests, only request if context id is changed
             // or it's been a while since the last request.
             if let Some(id) = id {
-                if !matches!(id, ContextId::Tracks(_))
-                    && !state.data.read().caches.context.contains_key(&id.uri())
+                if !state.data.read().caches.context.contains_key(&id.uri())
                     && (new_id
                         || handler_state.get_context_timer.elapsed() > Duration::from_secs(5))
                 {
@@ -196,19 +195,49 @@ fn handle_page_change_event(
                 }
             }
         }
-        PageState::SearchTui { line_input, state } => {
+        PageState::SearchTui {
+            line_input,
+            state: page_state,
+        } => {
             let query = line_input.get_text();
             if let Some(candidate_query) =
-                crate::search_tui::remote_candidate_query(&state.mode, &query)
+                crate::search_tui::remote_candidate_query(&page_state.mode, &query)
             {
-                if state.last_dispatched_query.as_deref() != Some(candidate_query.as_str())
-                    && state.last_edited_at.elapsed() >= Duration::from_millis(250)
+                if page_state.last_dispatched_query.as_deref() != Some(candidate_query.as_str())
+                    && page_state.last_edited_at.elapsed() >= Duration::from_millis(250)
                 {
                     client_pub.send(ClientRequest::Search(candidate_query.clone()))?;
-                    state.last_dispatched_query = Some(candidate_query);
+                    page_state.last_dispatched_query = Some(candidate_query);
                 }
             } else {
-                state.last_dispatched_query = None;
+                page_state.last_dispatched_query = None;
+            }
+
+            let context_id = match &page_state.mode {
+                crate::state::SearchTuiMode::Global => None,
+                crate::state::SearchTuiMode::Playlist { playlist_id, .. } => {
+                    Some(ContextId::Playlist(playlist_id.clone()))
+                }
+                crate::state::SearchTuiMode::Album { album_id, .. } => {
+                    Some(ContextId::Album(album_id.clone()))
+                }
+                crate::state::SearchTuiMode::Artist { artist_id, .. } => {
+                    Some(ContextId::Artist(artist_id.clone()))
+                }
+            };
+
+            if let Some(context_id) = context_id {
+                if !state
+                    .data
+                    .read()
+                    .caches
+                    .context
+                    .contains_key(&context_id.uri())
+                    && handler_state.get_context_timer.elapsed() > Duration::from_secs(2)
+                {
+                    client_pub.send(ClientRequest::GetContext(context_id))?;
+                    handler_state.get_context_timer = Instant::now();
+                }
             }
         }
         _ => {}
