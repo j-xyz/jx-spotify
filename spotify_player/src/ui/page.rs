@@ -1081,12 +1081,12 @@ pub fn render_commands_help_page(
             },
             HelpRow {
                 section: "Search TUI",
-                shortcuts: format_shortcuts(&["g i", "C-g"]),
+                shortcuts: format_shortcuts(&["g i"]),
                 description: "return to a fresh global search view".to_string(),
             },
             HelpRow {
                 section: "Search TUI",
-                shortcuts: format_shortcuts(&["C-c"]),
+                shortcuts: format_shortcuts(&["Q"]),
                 description: "quit the application".to_string(),
             },
         ]);

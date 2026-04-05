@@ -328,7 +328,7 @@ command = "ResumePause"
 key_sequence = "M-enter"
 [[keymaps]]
 command = "None"
-key_sequence = "q"
+key_sequence = "Q"
 [[keymaps]]
 command = { VolumeChange = { offset = 1 } }
 key_sequence = "-"
@@ -337,7 +337,7 @@ command = { SeekForward = { duration = 10 } }
 key_sequence = "E"
 [[keymaps]]
 command = { SeekBackward = { } }
-key_sequence = "Q"
+key_sequence = "B"
 ```
 
 A complete list of actions is available [here](../README.md#actions).

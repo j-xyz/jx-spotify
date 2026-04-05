@@ -68,10 +68,6 @@ fn handle_key_sequence_for_search_tui_page(
 
     let key = key_sequence.keys[0];
     match key {
-        Key::Ctrl(KeyCode::Char('c')) => {
-            ui.is_running = false;
-            return Ok(true);
-        }
         Key::None(KeyCode::Tab) => return toggle_search_tui_focus(ui, false),
         Key::None(KeyCode::BackTab) => return toggle_search_tui_focus(ui, true),
         Key::None(KeyCode::Esc) => return handle_search_tui_escape(ui),

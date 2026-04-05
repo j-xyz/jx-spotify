@@ -52,11 +52,11 @@ impl Default for KeymapConfig {
                     command: Command::ResumePause,
                 },
                 Keymap {
-                    key_sequence: "C-r".into(),
+                    key_sequence: "R".into(),
                     command: Command::Repeat,
                 },
                 Keymap {
-                    key_sequence: "C-s".into(),
+                    key_sequence: "X".into(),
                     command: Command::Shuffle,
                 },
                 Keymap {
@@ -100,20 +100,8 @@ impl Default for KeymapConfig {
                     command: Command::Queue,
                 },
                 Keymap {
-                    key_sequence: "C-z".into(),
-                    command: Command::AddSelectedItemToQueue,
-                },
-                Keymap {
                     key_sequence: "Z".into(),
                     command: Command::AddSelectedItemToQueue,
-                },
-                Keymap {
-                    key_sequence: "C-g".into(),
-                    command: Command::SearchTuiHome,
-                },
-                Keymap {
-                    key_sequence: "C-space".into(),
-                    command: Command::ShowActionsOnSelectedItem,
                 },
                 Keymap {
                     key_sequence: "g a".into(),
@@ -129,7 +117,7 @@ impl Default for KeymapConfig {
                 },
                 #[cfg(feature = "streaming")]
                 Keymap {
-                    key_sequence: "R".into(),
+                    key_sequence: "C R".into(),
                     command: Command::RestartIntegratedClient,
                 },
                 Keymap {
@@ -205,10 +193,6 @@ impl Default for KeymapConfig {
                     command: Command::PreviousPage,
                 },
                 Keymap {
-                    key_sequence: "C-q".into(),
-                    command: Command::PreviousPage,
-                },
-                Keymap {
                     key_sequence: "O".into(),
                     command: Command::OpenSpotifyLinkFromClipboard,
                 },
@@ -217,15 +201,7 @@ impl Default for KeymapConfig {
                     command: Command::OpenCommandHelp,
                 },
                 Keymap {
-                    key_sequence: "C-h".into(),
-                    command: Command::OpenCommandHelp,
-                },
-                Keymap {
-                    key_sequence: "q".into(),
-                    command: Command::Quit,
-                },
-                Keymap {
-                    key_sequence: "C-c".into(),
+                    key_sequence: "Q".into(),
                     command: Command::Quit,
                 },
                 Keymap {
@@ -237,19 +213,11 @@ impl Default for KeymapConfig {
                     command: Command::SelectNextOrScrollDown,
                 },
                 Keymap {
-                    key_sequence: "C-n".into(),
-                    command: Command::SelectNextOrScrollDown,
-                },
-                Keymap {
                     key_sequence: "down".into(),
                     command: Command::SelectNextOrScrollDown,
                 },
                 Keymap {
                     key_sequence: "k".into(),
-                    command: Command::SelectPreviousOrScrollUp,
-                },
-                Keymap {
-                    key_sequence: "C-p".into(),
                     command: Command::SelectPreviousOrScrollUp,
                 },
                 Keymap {
