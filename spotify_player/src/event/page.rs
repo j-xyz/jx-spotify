@@ -81,6 +81,9 @@ fn handle_key_sequence_for_search_tui_page(
     let focus = search_tui_focus(ui);
 
     if focus == SearchTuiFocus::Search {
+        if matches!(key, Key::None(KeyCode::Char('?'))) {
+            return Ok(false);
+        }
         if matches!(key, Key::None(KeyCode::Enter)) {
             return toggle_search_tui_focus(ui, false);
         }
@@ -996,6 +999,13 @@ fn handle_command_for_command_help_page(command: Command, ui: &mut UIStateGuard)
         PageState::CommandHelp { scroll_offset } => *scroll_offset,
         _ => return false,
     };
+    if matches!(command, Command::ClosePopup | Command::PreviousPage) {
+        if ui.history.len() > 1 {
+            ui.history.pop();
+            ui.popup = None;
+        }
+        return true;
+    }
     if command == Command::Search {
         ui.new_search_popup();
         return true;

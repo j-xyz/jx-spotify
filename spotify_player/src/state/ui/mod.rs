@@ -88,6 +88,7 @@ impl UIState {
 
         *line_input = crate::ui::single_line_input::LineInput::default();
         *state = SearchTuiPageUIState::new();
+        state.focus = crate::state::SearchTuiFocus::Results;
     }
 
     /// Return whether there exists a focused popup.

@@ -127,6 +127,37 @@ fn key_code_to_string(k: KeyCode) -> String {
     }
 }
 
+fn key_code_to_macos_string(k: KeyCode) -> String {
+    match k {
+        KeyCode::Char(c) => {
+            if c == ' ' {
+                "Space".to_string()
+            } else if c.is_ascii_alphabetic() {
+                c.to_ascii_uppercase().to_string()
+            } else {
+                c.to_string()
+            }
+        }
+        KeyCode::Enter => "Return".to_string(),
+        KeyCode::Tab => "Tab".to_string(),
+        KeyCode::BackTab => "Shift Tab".to_string(),
+        KeyCode::Backspace => "Delete".to_string(),
+        KeyCode::Esc => "Escape".to_string(),
+        KeyCode::Left => "Left Arrow".to_string(),
+        KeyCode::Right => "Right Arrow".to_string(),
+        KeyCode::Up => "Up Arrow".to_string(),
+        KeyCode::Down => "Down Arrow".to_string(),
+        KeyCode::Insert => "Insert".to_string(),
+        KeyCode::Delete => "Forward Delete".to_string(),
+        KeyCode::Home => "Home".to_string(),
+        KeyCode::End => "End".to_string(),
+        KeyCode::PageUp => "Page Up".to_string(),
+        KeyCode::PageDown => "Page Down".to_string(),
+        KeyCode::F(n) => format!("F{n}"),
+        _ => format!("{k:?}"),
+    }
+}
+
 impl std::fmt::Display for Key {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
@@ -135,6 +166,18 @@ impl std::fmt::Display for Key {
             Key::Super(k) => write!(f, "D-{}", key_code_to_string(k)),
             Key::None(k) => write!(f, "{}", key_code_to_string(k)),
             Key::Unknown => write!(f, "unknown key"),
+        }
+    }
+}
+
+impl Key {
+    pub fn display_macos(self) -> String {
+        match self {
+            Key::Ctrl(k) => format!("Control {}", key_code_to_macos_string(k)),
+            Key::Alt(k) => format!("Option {}", key_code_to_macos_string(k)),
+            Key::Super(k) => format!("Command {}", key_code_to_macos_string(k)),
+            Key::None(k) => key_code_to_macos_string(k),
+            Key::Unknown => "Unknown Key".to_string(),
         }
     }
 }
@@ -206,6 +249,16 @@ impl std::fmt::Display for KeySequence {
                 .collect::<Vec<_>>()
                 .join(" ")
         )
+    }
+}
+
+impl KeySequence {
+    pub fn display_macos(&self) -> String {
+        self.keys
+            .iter()
+            .map(|key| key.display_macos())
+            .collect::<Vec<_>>()
+            .join(" then ")
     }
 }
 

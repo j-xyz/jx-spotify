@@ -253,18 +253,27 @@ pub fn render_shortcut_help_popup(frame: &mut Frame, ui: &mut UIStateGuard, rect
     } else {
         let chunks = Layout::vertical([Constraint::Fill(0), Constraint::Length(7)]).split(rect);
 
-        let rect = utils::render_panel(frame, &ui.theme, chunks[1], "shortcuts", None, true);
+        let meta = Line::from(vec![super::Span::styled(
+            input.display_macos(),
+            ui.theme.page_desc().add_modifier(super::Modifier::BOLD),
+        )]);
+        let rect = utils::render_panel(frame, &ui.theme, chunks[1], "shortcuts", Some(meta), true);
 
         let help_table = Table::new(
             matches
                 .into_iter()
-                .map(|km| format!("{}: {:?}", km.key_sequence, km.command))
-                .collect::<Vec<_>>()
-                .chunks(SHORTCUT_TABLE_N_COLUMNS)
-                .map(|c| Row::new(c.iter().map(|i| Cell::from(i.to_owned()))))
+                .map(|km| {
+                    Row::new(vec![
+                        Cell::from(km.key_sequence.display_macos())
+                            .style(ui.theme.page_desc().add_modifier(super::Modifier::BOLD)),
+                        Cell::from(km.command.desc()),
+                        Cell::from(format!("{:?}", km.command)).style(ui.theme.playback_metadata()),
+                    ])
+                })
                 .collect::<Vec<_>>(),
             SHORTCUT_TABLE_CONSTRAINS,
-        );
+        )
+        .column_spacing(2);
 
         frame.render_widget(help_table, rect);
         chunks[0]

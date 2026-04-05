@@ -7,11 +7,12 @@ use chrono_humanize::HumanTime;
 use ratatui::text::Line;
 
 use crate::{
+    command::Command,
+    key::KeySequence,
     search_tui,
     state::{Episode, SearchTuiFocus, SearchTuiMode},
     utils::format_duration,
 };
-use ratatui::widgets::Wrap;
 
 use super::{
     config, utils, Album, Alignment, Artist, ArtistFocusState, Block, BrowsePageUIState, Cell,
@@ -22,14 +23,12 @@ use super::{
 use crate::state::BidiDisplay;
 use crate::ui::utils::to_bidi_string;
 
-const COMMAND_TABLE_CONSTRAINTS: [Constraint; 3] = [
-    Constraint::Percentage(25),
-    Constraint::Percentage(25),
-    Constraint::Percentage(50),
-];
+const COMMAND_TABLE_CONSTRAINTS: [Constraint; 2] =
+    [Constraint::Percentage(28), Constraint::Percentage(72)];
 
+#[derive(Clone)]
 struct HelpRow {
-    command: String,
+    section: &'static str,
     shortcuts: String,
     description: String,
 }
@@ -39,7 +38,7 @@ impl Display for HelpRow {
         write!(
             f,
             "{} {} {}",
-            self.command, self.shortcuts, self.description
+            self.section, self.shortcuts, self.description
         )
     }
 }
@@ -330,7 +329,7 @@ pub fn render_search_tui_page(
 
     let chunks = Layout::vertical([
         Constraint::Length(1),
-        Constraint::Length(2),
+        Constraint::Length(1),
         Constraint::Fill(0),
         Constraint::Length(6),
         Constraint::Length(1),
@@ -338,17 +337,15 @@ pub fn render_search_tui_page(
     ])
     .split(rect);
 
+    render_search_tui_header(frame, chunks[0], &mode, ui);
+
     let results_title = format!("{title}  {} items", items.len());
     render_search_tui_label(
         frame,
-        chunks[0],
+        chunks[1],
         &results_title,
         focus == SearchTuiFocus::Results,
         ui,
-    );
-    frame.render_widget(
-        Paragraph::new(search_tui_results_help(&mode, ui)).wrap(Wrap { trim: true }),
-        chunks[1],
     );
     render_search_tui_results(frame, chunks[2], items, is_active, focus, ui);
     super::playback::render_playback_window(frame, state, ui, chunks[3]);
@@ -381,114 +378,44 @@ fn render_search_tui_label(
     );
 }
 
-fn search_tui_help_style(ui: &UIStateGuard) -> Style {
-    let _ = ui;
-    Style::default()
-}
-
 fn search_tui_key_style(ui: &UIStateGuard) -> Style {
     ui.theme.page_desc().add_modifier(Modifier::BOLD)
 }
 
-fn search_tui_results_help(mode: &SearchTuiMode, ui: &UIStateGuard) -> Line<'static> {
-    let plain = search_tui_help_style(ui);
+fn render_search_tui_header(
+    frame: &mut Frame,
+    rect: Rect,
+    mode: &SearchTuiMode,
+    ui: &UIStateGuard,
+) {
     let key = search_tui_key_style(ui);
-
-    match mode {
+    let meta = match mode {
         SearchTuiMode::Global => Line::from(vec![
-            Span::styled("Use ", plain),
-            Span::styled("Tab", key),
-            Span::styled(" switch panes. ", plain),
-            Span::styled("Enter", key),
-            Span::styled(" open, ", plain),
-            Span::styled("p", key),
-            Span::styled(" play, ", plain),
-            Span::styled("r", key),
-            Span::styled(" radio, ", plain),
-            Span::styled("/", key),
-            Span::styled(" search, ", plain),
-            Span::styled("g i", key),
-            Span::styled(" home.", plain),
+            Span::styled("global", ui.theme.playlist_desc()),
+            Span::raw("  "),
+            Span::styled("?", key),
+            Span::styled(" help", ui.theme.playback_metadata()),
         ]),
         SearchTuiMode::Playlist { .. }
         | SearchTuiMode::Album { .. }
         | SearchTuiMode::Artist { .. } => Line::from(vec![
-            Span::styled("Use ", plain),
-            Span::styled("Tab", key),
-            Span::styled(" switch panes. ", plain),
-            Span::styled("Enter", key),
-            Span::styled(" play, ", plain),
-            Span::styled("r", key),
-            Span::styled(" radio, ", plain),
-            Span::styled("/", key),
-            Span::styled(" search, ", plain),
-            Span::styled("g i", key),
-            Span::styled(" home, ", plain),
-            Span::styled("g u", key),
-            Span::styled(" back.", plain),
+            Span::styled("drill-in", ui.theme.playlist_desc()),
+            Span::raw("  "),
+            Span::styled("?", key),
+            Span::styled(" help", ui.theme.playback_metadata()),
         ]),
-    }
-}
-
-fn search_tui_search_help(mode: &SearchTuiMode, ui: &UIStateGuard) -> Line<'static> {
-    let plain = search_tui_help_style(ui);
-    let key = search_tui_key_style(ui);
-
-    match mode {
-        SearchTuiMode::Global => Line::from(vec![
-            Span::styled("Sigils: ", plain),
-            Span::styled("!", key),
-            Span::styled(" tracks ", plain),
-            Span::styled("@", key),
-            Span::styled(" artists ", plain),
-            Span::styled("$", key),
-            Span::styled(" albums ", plain),
-            Span::styled("#", key),
-            Span::styled(" playlists. ", plain),
-            Span::styled("Enter", key),
-            Span::styled(" results. ", plain),
-            Span::styled("g i", key),
-            Span::styled(" / ", plain),
-            Span::styled("Ctrl-G", key),
-            Span::styled(" home. ", plain),
-            Span::styled("Ctrl-C", key),
-            Span::styled(" quits.", plain),
-        ]),
-        SearchTuiMode::Playlist { .. }
-        | SearchTuiMode::Album { .. }
-        | SearchTuiMode::Artist { .. } => Line::from(vec![
-            Span::styled("Track filter. ", plain),
-            Span::styled("Esc", key),
-            Span::styled(" back. ", plain),
-            Span::styled("g i", key),
-            Span::styled(" / ", plain),
-            Span::styled("Ctrl-G", key),
-            Span::styled(" home. ", plain),
-            Span::styled("Ctrl-C", key),
-            Span::styled(" quits.", plain),
-        ]),
-    }
+    };
+    utils::render_section_header(frame, &ui.theme, rect, "spotify", Some(meta), true);
 }
 
 fn render_search_tui_search_header(
     frame: &mut Frame,
     rect: Rect,
-    mode: &SearchTuiMode,
+    _mode: &SearchTuiMode,
     focus: SearchTuiFocus,
     ui: &UIStateGuard,
 ) {
-    let chunks = Layout::horizontal([Constraint::Length(10), Constraint::Fill(0)]).split(rect);
-    render_search_tui_label(
-        frame,
-        chunks[0],
-        "Search",
-        focus == SearchTuiFocus::Search,
-        ui,
-    );
-    frame.render_widget(
-        Paragraph::new(search_tui_search_help(mode, ui)).alignment(Alignment::Right),
-        chunks[1],
-    );
+    render_search_tui_label(frame, rect, "Search", focus == SearchTuiFocus::Search, ui);
 }
 
 fn render_search_tui_results(
@@ -1055,10 +982,10 @@ pub fn render_commands_help_page(
             let v = map.entry(km.command);
             match v {
                 Entry::Vacant(v) => {
-                    v.insert(format!("\"{}\"", km.key_sequence));
+                    v.insert(km.key_sequence.display_macos());
                 }
                 Entry::Occupied(mut v) => {
-                    let keys = format!("{}, \"{}\"", v.get(), km.key_sequence);
+                    let keys = format!("{}, {}", v.get(), km.key_sequence.display_macos());
                     *v.get_mut() = keys;
                 }
             }
@@ -1073,7 +1000,7 @@ pub fn render_commands_help_page(
     let mut rows = map
         .into_iter()
         .map(|(command, keys)| HelpRow {
-            command: format!("{command:?}"),
+            section: help_section(command),
             shortcuts: format!("[{keys}]"),
             description: command.desc().to_string(),
         })
@@ -1082,58 +1009,60 @@ pub fn render_commands_help_page(
     if source_page_type == PageType::SearchTui {
         rows.extend([
             HelpRow {
-                command: "SearchTuiSwitchPane".to_string(),
-                shortcuts: "[Tab], [S-Tab]".to_string(),
+                section: "Search TUI",
+                shortcuts: format_shortcuts(&["tab", "backtab"]),
                 description: "switch between search and results".to_string(),
             },
             HelpRow {
-                command: "SearchTuiOpen".to_string(),
-                shortcuts: "[Enter]".to_string(),
+                section: "Search TUI",
+                shortcuts: format_shortcuts(&["enter"]),
                 description: "open selected result or play selected track in a drilled-in list"
                     .to_string(),
             },
             HelpRow {
-                command: "SearchTuiPlayDirect".to_string(),
-                shortcuts: "[p]".to_string(),
+                section: "Search TUI",
+                shortcuts: format_shortcuts(&["p"]),
                 description: "play the selected artist, album, or playlist directly".to_string(),
             },
             HelpRow {
-                command: "SearchTuiRadio".to_string(),
-                shortcuts: "[r]".to_string(),
+                section: "Search TUI",
+                shortcuts: format_shortcuts(&["r"]),
                 description: "open radio for the selected item".to_string(),
             },
             HelpRow {
-                command: "SearchTuiFocusSearch".to_string(),
-                shortcuts: "[/]".to_string(),
+                section: "Search TUI",
+                shortcuts: format_shortcuts(&["/"]),
                 description: "move focus to the search field".to_string(),
             },
             HelpRow {
-                command: "SearchTuiBackOrClear".to_string(),
-                shortcuts: "[Esc]".to_string(),
+                section: "Search TUI",
+                shortcuts: format_shortcuts(&["esc"]),
                 description: "clear, go back, or switch back to results when search is empty"
                     .to_string(),
             },
             HelpRow {
-                command: "SearchTuiHome".to_string(),
-                shortcuts: "[g i], [C-g]".to_string(),
+                section: "Search TUI",
+                shortcuts: format_shortcuts(&["g i", "C-g"]),
                 description: "return to a fresh global search view".to_string(),
             },
             HelpRow {
-                command: "SearchTuiQuit".to_string(),
-                shortcuts: "[C-c]".to_string(),
+                section: "Search TUI",
+                shortcuts: format_shortcuts(&["C-c"]),
                 description: "quit the application".to_string(),
             },
         ]);
     }
 
     let rows = ui.search_filtered_items(&rows);
+    let filtered_len = rows.len();
+    let display_rows = build_help_display_rows(rows.into_iter().cloned().collect());
 
     let scroll_offset = match ui.current_page_mut() {
         PageState::CommandHelp {
             ref mut scroll_offset,
         } => {
-            if !rows.is_empty() && *scroll_offset >= rows.len() {
-                *scroll_offset = rows.len() - 1;
+            if !display_rows.is_empty() && *scroll_offset >= display_rows.len() {
+                *scroll_offset = display_rows.len() - 1;
             }
             *scroll_offset
         }
@@ -1147,8 +1076,8 @@ pub fn render_commands_help_page(
             frame,
             &ui.theme,
             chunks[0],
-            "commands",
-            Some(Line::from(format!("{} items", rows.len()))),
+            "help",
+            Some(Line::from(format!("{} items", filtered_len))),
             true,
         );
         super::playback::render_playback_window(frame, state, ui, chunks[1]);
@@ -1158,37 +1087,192 @@ pub fn render_commands_help_page(
             frame,
             &ui.theme,
             rect,
-            "commands",
-            Some(Line::from(format!("{} items", rows.len()))),
+            "help",
+            Some(Line::from(format!("{} items", filtered_len))),
             true,
         )
     };
 
     // 3. Construct the page's widget
     let help_table = Table::new(
-        rows.into_iter()
+        display_rows
+            .into_iter()
             .skip(scroll_offset)
             .map(|row| {
-                Row::new(vec![
-                    Cell::from(row.command.clone()),
-                    Cell::from(row.shortcuts.clone()),
-                    Cell::from(row.description.clone()),
-                ])
+                if row.is_section_break {
+                    Row::new(vec![Cell::from(""), Cell::from("")]).height(1)
+                } else {
+                    let key_style = if row.is_section {
+                        ui.theme.page_desc().add_modifier(Modifier::BOLD)
+                    } else {
+                        ui.theme.page_desc().add_modifier(Modifier::BOLD)
+                    };
+                    let description_style = if row.is_section {
+                        ui.theme.playlist_desc().add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default()
+                    };
+
+                    Row::new(vec![
+                        Cell::from(Text::from(row.shortcuts).alignment(Alignment::Left))
+                            .style(key_style),
+                        Cell::from(row.description).style(description_style),
+                    ])
+                }
             })
             .collect::<Vec<_>>(),
         COMMAND_TABLE_CONSTRAINTS,
-    )
-    .header(
-        Row::new(vec![
-            Cell::from("Command"),
-            Cell::from("Shortcuts"),
-            Cell::from("Description"),
-        ])
-        .style(ui.theme.table_header()),
     );
 
     // 4. Render the page's widget
     frame.render_widget(help_table, rect);
+}
+
+struct HelpDisplayRow {
+    shortcuts: String,
+    description: String,
+    is_section: bool,
+    is_section_break: bool,
+}
+
+fn build_help_display_rows(rows: Vec<HelpRow>) -> Vec<HelpDisplayRow> {
+    let mut grouped = BTreeMap::<&'static str, Vec<HelpRow>>::new();
+    for row in rows {
+        grouped.entry(row.section).or_default().push(row);
+    }
+
+    let ordered_sections = [
+        "Search TUI",
+        "Navigation",
+        "Views",
+        "Playback",
+        "Library",
+        "Sorting",
+        "System",
+    ];
+
+    let mut display_rows = Vec::new();
+    for section in ordered_sections {
+        let Some(mut section_rows) = grouped.remove(section) else {
+            continue;
+        };
+        if !display_rows.is_empty() {
+            display_rows.push(HelpDisplayRow {
+                shortcuts: String::new(),
+                description: String::new(),
+                is_section: false,
+                is_section_break: true,
+            });
+        }
+        display_rows.push(HelpDisplayRow {
+            shortcuts: section.to_lowercase(),
+            description: String::new(),
+            is_section: true,
+            is_section_break: false,
+        });
+        section_rows.sort_by(|a, b| a.shortcuts.cmp(&b.shortcuts));
+        display_rows.extend(section_rows.into_iter().map(|row| HelpDisplayRow {
+            shortcuts: row.shortcuts,
+            description: row.description,
+            is_section: false,
+            is_section_break: false,
+        }));
+    }
+
+    for (_section, section_rows) in grouped {
+        if !display_rows.is_empty() {
+            display_rows.push(HelpDisplayRow {
+                shortcuts: String::new(),
+                description: String::new(),
+                is_section: false,
+                is_section_break: true,
+            });
+        }
+        display_rows.extend(section_rows.into_iter().map(|row| HelpDisplayRow {
+            shortcuts: row.shortcuts,
+            description: row.description,
+            is_section: false,
+            is_section_break: false,
+        }));
+    }
+
+    display_rows
+}
+
+fn help_section(command: Command) -> &'static str {
+    match command {
+        Command::SelectNextOrScrollDown
+        | Command::SelectPreviousOrScrollUp
+        | Command::PageSelectNextOrScrollDown
+        | Command::PageSelectPreviousOrScrollUp
+        | Command::SelectFirstOrScrollToTop
+        | Command::SelectLastOrScrollToBottom
+        | Command::ChooseSelected
+        | Command::FocusNextWindow
+        | Command::FocusPreviousWindow
+        | Command::PreviousPage
+        | Command::JumpToCurrentTrackInContext
+        | Command::JumpToHighlightTrackInContext => "Navigation",
+        Command::LibraryPage
+        | Command::SearchPage
+        | Command::SearchTuiHome
+        | Command::BrowsePage
+        | Command::Queue
+        | Command::OpenCommandHelp
+        | Command::OpenLogs
+        | Command::CurrentlyPlayingContextPage
+        | Command::TopTrackPage
+        | Command::RecentlyPlayedTrackPage
+        | Command::LikedTrackPage
+        | Command::LyricsPage => "Views",
+        Command::Search
+        | Command::BrowseUserPlaylists
+        | Command::BrowseUserFollowedArtists
+        | Command::BrowseUserSavedAlbums => "Library",
+        Command::NextTrack
+        | Command::PreviousTrack
+        | Command::ResumePause
+        | Command::PlayRandom
+        | Command::Repeat
+        | Command::Shuffle
+        | Command::VolumeChange { .. }
+        | Command::Mute
+        | Command::SeekStart
+        | Command::SeekForward { .. }
+        | Command::SeekBackward { .. }
+        | Command::RefreshPlayback
+        | Command::SwitchDevice
+        | Command::ShowActionsOnSelectedItem
+        | Command::ShowActionsOnCurrentTrack
+        | Command::ShowActionsOnCurrentContext
+        | Command::AddSelectedItemToQueue => "Playback",
+        Command::SortTrackByTitle
+        | Command::SortTrackByArtists
+        | Command::SortTrackByAlbum
+        | Command::SortTrackByDuration
+        | Command::SortTrackByAddedDate
+        | Command::ReverseTrackOrder
+        | Command::SortLibraryAlphabetically
+        | Command::SortLibraryByRecent
+        | Command::MovePlaylistItemUp
+        | Command::MovePlaylistItemDown => "Sorting",
+        Command::Quit
+        | Command::ClosePopup
+        | Command::SwitchTheme
+        | Command::CreatePlaylist
+        | Command::OpenSpotifyLinkFromClipboard => "System",
+        Command::None => "System",
+        #[cfg(feature = "streaming")]
+        Command::RestartIntegratedClient => "System",
+    }
+}
+
+fn format_shortcuts(shortcuts: &[&str]) -> String {
+    shortcuts
+        .iter()
+        .filter_map(|shortcut| KeySequence::from_str(shortcut).map(|keys| keys.display_macos()))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 pub fn render_queue_page(
