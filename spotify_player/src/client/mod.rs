@@ -102,10 +102,31 @@ impl AppClient {
             let url = client
                 .get_authorize_url(None)
                 .context("get authorize URL for user-provided client")?;
-            client
-                .prompt_for_token(&url)
-                .await
-                .context("get token for user-provided client")?;
+            if let Err(err) = client.prompt_for_token(&url).await {
+                let err_text = err.to_string();
+                let should_retry_with_fresh_cache = token_cache_path_exists(
+                    configs
+                        .cache_folder
+                        .join("user_client_token.json")
+                        .as_path(),
+                ) && err_text.contains("status code 400");
+
+                if should_retry_with_fresh_cache {
+                    let token_cache_path = configs.cache_folder.join("user_client_token.json");
+                    tracing::warn!(
+                        "User client token refresh failed with 400, clearing cached token and retrying authentication"
+                    );
+                    std::fs::remove_file(&token_cache_path).with_context(|| {
+                        format!("remove stale user client token cache at {token_cache_path:?}")
+                    })?;
+                    ensure_private_file(&token_cache_path)?;
+                    client.prompt_for_token(&url).await.context(
+                        "re-authenticate user-provided client after clearing stale token cache",
+                    )?;
+                } else {
+                    return Err(err).context("get token for user-provided client");
+                }
+            }
         }
 
         Ok(Self {
@@ -1975,6 +1996,10 @@ impl AppClient {
 
         albums
     }
+}
+
+fn token_cache_path_exists(path: &std::path::Path) -> bool {
+    path.exists()
 }
 
 fn move_seed_track_to_front(tracks: &mut Vec<Track>, seed_track: Track) {
