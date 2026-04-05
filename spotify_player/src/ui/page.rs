@@ -332,7 +332,8 @@ pub fn render_search_tui_page(
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Fill(0),
-        Constraint::Length(6),
+        Constraint::Length(1),
+        Constraint::Length(5),
         Constraint::Length(1),
         Constraint::Length(1),
     ])
@@ -352,15 +353,15 @@ pub fn render_search_tui_page(
         ui,
     );
     render_search_tui_results(frame, chunks[2], items, is_active, focus, ui);
-    super::playback::render_playback_window(frame, state, ui, chunks[3]);
+    super::playback::render_playback_window(frame, state, ui, chunks[4]);
 
-    render_search_tui_search_header(frame, chunks[4], &mode, focus, ui);
+    render_search_tui_search_header(frame, chunks[5], &mode, focus, ui);
 
     let search_box_style = ui.theme.playback_progress_bar_unfilled();
-    frame.render_widget(Block::default().style(search_box_style), chunks[5]);
+    frame.render_widget(Block::default().style(search_box_style), chunks[6]);
     frame.render_widget(
         line_input.widget(is_active && focus == SearchTuiFocus::Search),
-        chunks[5],
+        chunks[6],
     );
 }
 
