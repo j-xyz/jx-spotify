@@ -60,6 +60,19 @@ impl Default for KeymapConfig {
                     command: Command::Shuffle,
                 },
                 Keymap {
+                    key_sequence: "m p".into(),
+                    command: Command::RefreshPlayback,
+                },
+                Keymap {
+                    key_sequence: "m d".into(),
+                    command: Command::SwitchDevice,
+                },
+                #[cfg(feature = "streaming")]
+                Keymap {
+                    key_sequence: "m c".into(),
+                    command: Command::RestartIntegratedClient,
+                },
+                Keymap {
                     key_sequence: "+".into(),
                     command: Command::VolumeChange { offset: 5 },
                 },
@@ -123,11 +136,6 @@ impl Default for KeymapConfig {
                     key_sequence: "a x".into(),
                     command: Command::ShowActionsOnCurrentContext,
                 },
-                #[cfg(feature = "streaming")]
-                Keymap {
-                    key_sequence: "C R".into(),
-                    command: Command::RestartIntegratedClient,
-                },
                 Keymap {
                     key_sequence: "tab".into(),
                     command: Command::FocusNextWindow,
@@ -139,10 +147,6 @@ impl Default for KeymapConfig {
                 Keymap {
                     key_sequence: "T".into(),
                     command: Command::SwitchTheme,
-                },
-                Keymap {
-                    key_sequence: "D".into(),
-                    command: Command::SwitchDevice,
                 },
                 Keymap {
                     key_sequence: "u p".into(),

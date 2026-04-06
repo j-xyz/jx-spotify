@@ -371,9 +371,8 @@ Press `?` to open the shortcut help page (default for `OpenCommandHelp`).
 **Tips**:
 
 - Use the `Search` command to search in the shortcut help page and other pages.
-- `RestartIntegratedClient` is useful for switching audio devices without restarting the app.
 - `r s`, `r c`, and `r x` open radio from the selected item, current track, and current context.
-- `m r` and `m s` group playback mode toggles under one prefix.
+- `m` is the playback control family: repeat, shuffle, refresh, device, and integrated-client recovery.
 
 List of supported commands:
 
@@ -385,6 +384,9 @@ List of supported commands:
 | `PlayRandom`                    | play a random track in the current context                                                         | `.`                |
 | `Repeat`                        | cycle the repeat mode                                                                              | `m r`              |
 | `Shuffle`                       | toggle the shuffle mode                                                                            | `m s`              |
+| `RefreshPlayback`               | manually refresh the current playback                                                              | `m p`              |
+| `SwitchDevice`                  | open a popup for switching device                                                                  | `m d`              |
+| `RestartIntegratedClient`       | restart the integrated client (`streaming` feature only)                                           | `m c`              |
 | `VolumeChange`                  | change playback volume by an offset (default shortcuts use 5%)                                     | `+`, `-`           |
 | `Mute`                          | toggle playback volume between 0% and previous level                                               | `_`                |
 | `SeekStart`                     | seek start of current track                                                                        | `^`                |
@@ -399,11 +401,9 @@ List of supported commands:
 | `SelectFirstOrScrollToTop`      | select the first item in a list/table or scroll to the top                                         | `g g`, `home`      |
 | `SelectLastOrScrollToBottom`    | select the last item in a list/table or scroll to the bottom                                       | `G`, `end`         |
 | `ChooseSelected`                | choose the selected item                                                                           | `enter`            |
-| `RefreshPlayback`               | manually refresh the current playback                                                              |                    |
 | `GoToRadioFromSelectedItem`     | open radio for the selected item                                                                   | `r s`              |
 | `GoToRadioFromCurrentTrack`     | open radio for the current track                                                                   | `r c`              |
 | `GoToRadioFromCurrentContext`   | open radio for the current context                                                                 | `r x`              |
-| `RestartIntegratedClient`       | restart the integrated client (`streaming` feature only)                                           | `C R`              |
 | `ShowActionsOnSelectedItem`     | open a popup showing actions on a selected item                                                    | `a s`              |
 | `ShowActionsOnCurrentTrack`     | open a popup showing actions on the current track                                                  | `a c`              |
 | `ShowActionsOnCurrentContext`   | open a popup showing actions on the current context                                                | `a x`              |
@@ -411,7 +411,6 @@ List of supported commands:
 | `FocusNextWindow`               | focus the next focusable window (if any)                                                           | `tab`              |
 | `FocusPreviousWindow`           | focus the previous focusable window (if any)                                                       | `backtab`          |
 | `SwitchTheme`                   | open a popup for switching theme                                                                   | `T`                |
-| `SwitchDevice`                  | open a popup for switching device                                                                  | `D`                |
 | `Search`                        | open a popup for searching in the current page                                                     | `/`                |
 | `BrowseUserPlaylists`           | open a popup for browsing user's playlists                                                         | `u p`              |
 | `BrowseUserFollowedArtists`     | open a popup for browsing user's followed artists                                                  | `u a`              |
