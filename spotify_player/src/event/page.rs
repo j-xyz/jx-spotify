@@ -36,6 +36,23 @@ pub fn handle_key_sequence_for_page(
         .keymap_config
         .find_command_or_action_from_key_sequence(key_sequence)
     {
+        Some(CommandOrAction::Command(Command::GoToRadioFromSelectedItem)) => match page_type {
+            PageType::Search => anyhow::bail!("page search type should already be handled!"),
+            PageType::SearchTui => anyhow::bail!("search tui should already be handled!"),
+            PageType::Library => {
+                handle_action_for_library_page(Action::GoToRadio, client_pub, ui, state)
+            }
+            PageType::Context => window::handle_action_for_focused_context_page(
+                Action::GoToRadio,
+                client_pub,
+                ui,
+                state,
+            ),
+            PageType::Browse => {
+                handle_action_for_browse_page(Action::GoToRadio, client_pub, ui, state)
+            }
+            _ => Ok(false),
+        },
         Some(CommandOrAction::Command(command)) => match page_type {
             PageType::Search => anyhow::bail!("page search type should already be handled!"),
             PageType::SearchTui => anyhow::bail!("search tui should already be handled!"),
@@ -106,9 +123,6 @@ fn handle_key_sequence_for_search_tui_page(
         Key::None(KeyCode::Char('p')) | Key::Alt(KeyCode::Char('p')) => {
             return play_search_tui_item(client_pub, state, ui);
         }
-        Key::None(KeyCode::Char('r')) | Key::Alt(KeyCode::Char('r')) => {
-            return radio_search_tui_item(client_pub, state, ui);
-        }
         Key::None(KeyCode::Char('/')) => {
             return focus_search_tui_search(ui);
         }
@@ -159,6 +173,12 @@ fn handle_search_tui_command_or_action(
     Ok(match matched {
         Some(CommandOrAction::Command(Command::ChooseSelected)) => {
             Some(choose_search_tui_item(client_pub, state, ui)?)
+        }
+        Some(CommandOrAction::Command(Command::GoToRadioFromSelectedItem)) => {
+            Some(radio_search_tui_item(client_pub, state, ui)?)
+        }
+        Some(CommandOrAction::Command(Command::GoToRadioFromCurrentContext)) => {
+            Some(radio_search_tui_context(client_pub, ui)?)
         }
         Some(CommandOrAction::Command(Command::ShowActionsOnSelectedItem)) => {
             Some(show_actions_on_search_tui_item(state, ui)?)
@@ -651,6 +671,24 @@ fn radio_search_tui_item(
     Ok(true)
 }
 
+fn radio_search_tui_context(
+    client_pub: &flume::Sender<ClientRequest>,
+    ui: &mut UIStateGuard,
+) -> Result<bool> {
+    let (seed_uri, seed_name) = match ui.current_page() {
+        PageState::SearchTui { state, .. } => match &state.mode {
+            SearchTuiMode::Global => return Ok(false),
+            SearchTuiMode::Playlist { playlist_id, title } => (playlist_id.uri(), title.clone()),
+            SearchTuiMode::Album { album_id, title } => (album_id.uri(), title.clone()),
+            SearchTuiMode::Artist { artist_id, title } => (artist_id.uri(), title.clone()),
+        },
+        _ => anyhow::bail!("expect a search tui page"),
+    };
+
+    super::handle_go_to_radio(&seed_uri, &seed_name, ui, client_pub)?;
+    Ok(true)
+}
+
 fn remember_recent_track_seed(state: &SharedState, track: &Track, source: RecentTrackSeedSource) {
     let recent_track_seeds = {
         let mut data = state.data.write();
@@ -868,6 +906,15 @@ fn handle_key_sequence_for_search_page(
                 .unwrap_or_default();
 
             match found_keymap {
+                CommandOrAction::Command(Command::GoToRadioFromSelectedItem) => {
+                    window::handle_action_for_selected_item(
+                        Action::GoToRadio,
+                        &tracks,
+                        &data,
+                        ui,
+                        client_pub,
+                    )
+                }
                 CommandOrAction::Command(command) => window::handle_command_for_track_list_window(
                     command, client_pub, &tracks, &data, ui, state,
                 ),
@@ -883,6 +930,15 @@ fn handle_key_sequence_for_search_page(
                 .unwrap_or_default();
 
             match found_keymap {
+                CommandOrAction::Command(Command::GoToRadioFromSelectedItem) => {
+                    window::handle_action_for_selected_item(
+                        Action::GoToRadio,
+                        &artists,
+                        &data,
+                        ui,
+                        client_pub,
+                    )
+                }
                 CommandOrAction::Command(command) => Ok(
                     window::handle_command_for_artist_list_window(command, &artists, &data, ui),
                 ),
@@ -898,6 +954,15 @@ fn handle_key_sequence_for_search_page(
                 .unwrap_or_default();
 
             match found_keymap {
+                CommandOrAction::Command(Command::GoToRadioFromSelectedItem) => {
+                    window::handle_action_for_selected_item(
+                        Action::GoToRadio,
+                        &albums,
+                        &data,
+                        ui,
+                        client_pub,
+                    )
+                }
                 CommandOrAction::Command(command) => window::handle_command_for_album_list_window(
                     command, &albums, &data, ui, client_pub,
                 ),
@@ -919,6 +984,15 @@ fn handle_key_sequence_for_search_page(
             let playlist_refs = playlists.iter().collect::<Vec<_>>();
 
             match found_keymap {
+                CommandOrAction::Command(Command::GoToRadioFromSelectedItem) => {
+                    window::handle_action_for_selected_item(
+                        Action::GoToRadio,
+                        &playlist_refs,
+                        &data,
+                        ui,
+                        client_pub,
+                    )
+                }
                 CommandOrAction::Command(command) => {
                     Ok(window::handle_command_for_playlist_list_window(
                         command,
@@ -945,6 +1019,15 @@ fn handle_key_sequence_for_search_page(
                 .unwrap_or_default();
 
             match found_keymap {
+                CommandOrAction::Command(Command::GoToRadioFromSelectedItem) => {
+                    window::handle_action_for_selected_item(
+                        Action::GoToRadio,
+                        &shows,
+                        &data,
+                        ui,
+                        client_pub,
+                    )
+                }
                 CommandOrAction::Command(command) => Ok(
                     window::handle_command_for_show_list_window(command, &shows, &data, ui),
                 ),
@@ -988,57 +1071,79 @@ fn handle_command_for_context_page(
             ui.new_search_popup();
             Ok(true)
         }
-        Command::ShowActionsOnCurrentContext => {
-            let context_id = match ui.current_page() {
-                PageState::Context { id, .. } => match id {
-                    None => return Ok(false),
-                    Some(id) => id,
-                },
-                _ => anyhow::bail!("expect a context page"),
-            };
-            let data = state.data.read();
-
-            match data.caches.context.get(&context_id.uri()) {
-                Some(context) => match context {
-                    Context::Playlist { playlist, .. } => {
-                        let actions = construct_playlist_actions(playlist, &data);
-                        ui.popup = Some(PopupState::ActionList(
-                            Box::new(ActionListItem::Playlist(playlist.clone(), actions)),
-                            ListState::default(),
-                        ));
-                        Ok(true)
-                    }
-                    Context::Album { album, .. } => {
-                        let actions = construct_album_actions(album, &data);
-                        ui.popup = Some(PopupState::ActionList(
-                            Box::new(ActionListItem::Album(album.clone(), actions)),
-                            ListState::default(),
-                        ));
-                        Ok(true)
-                    }
-                    Context::Artist { artist, .. } => {
-                        let actions = construct_artist_actions(artist, &data);
-                        ui.popup = Some(PopupState::ActionList(
-                            Box::new(ActionListItem::Artist(artist.clone(), actions)),
-                            ListState::default(),
-                        ));
-                        Ok(true)
-                    }
-                    Context::Show { show, .. } => {
-                        let actions = construct_show_actions(show, &data);
-                        ui.popup = Some(PopupState::ActionList(
-                            Box::new(ActionListItem::Show(show.clone(), actions)),
-                            ListState::default(),
-                        ));
-                        Ok(true)
-                    }
-                    Context::Tracks { tracks: _, desc: _ } => Ok(false),
-                },
-                None => Ok(false),
-            }
+        Command::GoToRadioFromCurrentContext => {
+            handle_action_for_current_context(Action::GoToRadio, client_pub, ui, state)
         }
+        Command::ShowActionsOnCurrentContext => show_actions_on_current_context(ui, state),
         _ => window::handle_command_for_focused_context_window(command, client_pub, ui, state),
     }
+}
+
+fn current_context_action_context(
+    ui: &UIStateGuard,
+    state: &SharedState,
+) -> Result<Option<ActionContext>> {
+    let context_id = match ui.current_page() {
+        PageState::Context { id, .. } => match id {
+            None => return Ok(None),
+            Some(id) => id.clone(),
+        },
+        _ => anyhow::bail!("expect a context page"),
+    };
+    let data = state.data.read();
+
+    Ok(match data.caches.context.get(&context_id.uri()) {
+        Some(Context::Playlist { playlist, .. }) => Some(ActionContext::Playlist(playlist.clone())),
+        Some(Context::Album { album, .. }) => Some(ActionContext::Album(album.clone())),
+        Some(Context::Artist { artist, .. }) => Some(ActionContext::Artist(artist.clone())),
+        Some(Context::Show { show, .. }) => Some(ActionContext::Show(show.clone())),
+        Some(Context::Tracks { .. }) | None => None,
+    })
+}
+
+fn show_actions_on_current_context(ui: &mut UIStateGuard, state: &SharedState) -> Result<bool> {
+    let Some(context) = current_context_action_context(ui, state)? else {
+        return Ok(false);
+    };
+    let data = state.data.read();
+
+    let item = match context {
+        ActionContext::Playlist(playlist) => {
+            let actions = construct_playlist_actions(&playlist, &data);
+            ActionListItem::Playlist(playlist, actions)
+        }
+        ActionContext::Album(album) => {
+            let actions = construct_album_actions(&album, &data);
+            ActionListItem::Album(album, actions)
+        }
+        ActionContext::Artist(artist) => {
+            let actions = construct_artist_actions(&artist, &data);
+            ActionListItem::Artist(artist, actions)
+        }
+        ActionContext::Show(show) => {
+            let actions = construct_show_actions(&show, &data);
+            ActionListItem::Show(show, actions)
+        }
+        ActionContext::Track(_) | ActionContext::Episode(_) | ActionContext::PlaylistFolder(_) => {
+            return Ok(false);
+        }
+    };
+
+    ui.popup = Some(PopupState::ActionList(Box::new(item), ListState::default()));
+    Ok(true)
+}
+
+fn handle_action_for_current_context(
+    action: Action,
+    client_pub: &flume::Sender<ClientRequest>,
+    ui: &mut UIStateGuard,
+    state: &SharedState,
+) -> Result<bool> {
+    let Some(context) = current_context_action_context(ui, state)? else {
+        return Ok(false);
+    };
+    let data = state.data.read();
+    handle_action_in_context(action, context, client_pub, &data, ui)
 }
 
 fn handle_action_for_browse_page(

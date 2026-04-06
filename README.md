@@ -350,7 +350,7 @@ For more details, run `spotify_player -h` or `spotify_player {command} -h`.
 - On first use, run `spotify_player authenticate` to authenticate the app.
 - CLI commands communicate with a client socket on port `client_port` (default: `8080`). If no instance is running, a new client is started, which may increase latency.
 - `spotify_player search-tui` starts a single-list, search-driven interface geared toward quick search, radio, and playlist drill-in flows.
-- In `search-tui`, `Tab` switches between the search box and results. In results, `Enter` chooses, `r` opens radio, `p` plays directly, `/` returns to search, and `Esc` clears the query or backs out of playlist mode.
+- In `search-tui`, `Tab` switches between the search box and results. In results, `Enter` chooses, `r s` opens radio for the selected item, `p` plays directly, `/` returns to search, and `Esc` clears the query or backs out of playlist mode.
 - `search-tui` also supports inline type sigils: `!` for tracks, `@` for artists, `$` for albums, and `#` for playlists.
 
 #### Scripting
@@ -371,8 +371,9 @@ Press `?` to open the shortcut help page (default for `OpenCommandHelp`).
 **Tips**:
 
 - Use the `Search` command to search in the shortcut help page and other pages.
-- `RefreshPlayback` manually updates playback status.
 - `RestartIntegratedClient` is useful for switching audio devices without restarting the app.
+- `r s`, `r c`, and `r x` open radio from the selected item, current track, and current context.
+- `m r` and `m s` group playback mode toggles under one prefix.
 
 List of supported commands:
 
@@ -382,8 +383,8 @@ List of supported commands:
 | `PreviousTrack`                 | previous track                                                                                     | `p`                |
 | `ResumePause`                   | resume/pause based on the current playback                                                         | `space`            |
 | `PlayRandom`                    | play a random track in the current context                                                         | `.`                |
-| `Repeat`                        | cycle the repeat mode                                                                              | `R`                |
-| `Shuffle`                       | toggle the shuffle mode                                                                            | `X`                |
+| `Repeat`                        | cycle the repeat mode                                                                              | `m r`              |
+| `Shuffle`                       | toggle the shuffle mode                                                                            | `m s`              |
 | `VolumeChange`                  | change playback volume by an offset (default shortcuts use 5%)                                     | `+`, `-`           |
 | `Mute`                          | toggle playback volume between 0% and previous level                                               | `_`                |
 | `SeekStart`                     | seek start of current track                                                                        | `^`                |
@@ -398,11 +399,14 @@ List of supported commands:
 | `SelectFirstOrScrollToTop`      | select the first item in a list/table or scroll to the top                                         | `g g`, `home`      |
 | `SelectLastOrScrollToBottom`    | select the last item in a list/table or scroll to the bottom                                       | `G`, `end`         |
 | `ChooseSelected`                | choose the selected item                                                                           | `enter`            |
-| `RefreshPlayback`               | manually refresh the current playback                                                              | `r`                |
+| `RefreshPlayback`               | manually refresh the current playback                                                              |                    |
+| `GoToRadioFromSelectedItem`     | open radio for the selected item                                                                   | `r s`              |
+| `GoToRadioFromCurrentTrack`     | open radio for the current track                                                                   | `r c`              |
+| `GoToRadioFromCurrentContext`   | open radio for the current context                                                                 | `r x`              |
 | `RestartIntegratedClient`       | restart the integrated client (`streaming` feature only)                                           | `C R`              |
-| `ShowActionsOnSelectedItem`     | open a popup showing actions on a selected item                                                    | `g a`              |
-| `ShowActionsOnCurrentTrack`     | open a popup showing actions on the current track                                                  | `a`                |
-| `ShowActionsOnCurrentContext`   | open a popup showing actions on the current context                                                | `A`                |
+| `ShowActionsOnSelectedItem`     | open a popup showing actions on a selected item                                                    | `a s`              |
+| `ShowActionsOnCurrentTrack`     | open a popup showing actions on the current track                                                  | `a c`              |
+| `ShowActionsOnCurrentContext`   | open a popup showing actions on the current context                                                | `a x`              |
 | `AddSelectedItemToQueue`        | add the selected item to queue                                                                     | `Z`                |
 | `FocusNextWindow`               | focus the next focusable window (if any)                                                           | `tab`              |
 | `FocusPreviousWindow`           | focus the previous focusable window (if any)                                                       | `backtab`          |
@@ -443,7 +447,12 @@ To add or modify shortcuts, see the [keymaps section](https://github.com/aome510
 
 ### Actions
 
-Not all actions are available for every Spotify item. To see available actions, use `ShowActionsOnCurrentTrack` or `ShowActionsOnSelectedItem`, then press enter to trigger the action. Some actions may not appear in the popup but can be bound to shortcuts.
+Not all actions are available for every Spotify item. Use the `a` action prefix with a scope key:
+- `a c` for the current track
+- `a s` for the selected item
+- `a x` for the current context
+
+Then press enter to trigger the chosen action. Some actions may not appear in the popup but can be bound to shortcuts.
 
 List of available actions:
 

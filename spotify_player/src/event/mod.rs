@@ -659,6 +659,36 @@ fn handle_global_command(
         Command::RefreshPlayback => {
             client_pub.send(ClientRequest::GetCurrentPlayback)?;
         }
+        Command::GoToRadioFromCurrentTrack => {
+            let player = state.player.read();
+            let data = state.data.read();
+
+            if let Some(currently_playing) = player.currently_playing() {
+                match currently_playing {
+                    rspotify::model::PlayableItem::Track(track) => {
+                        if let Some(track) = Track::try_from_full_track(track.clone()) {
+                            handle_action_in_context(
+                                Action::GoToRadio,
+                                ActionContext::Track(track),
+                                client_pub,
+                                &data,
+                                ui,
+                            )?;
+                        }
+                    }
+                    rspotify::model::PlayableItem::Episode(episode) => {
+                        handle_action_in_context(
+                            Action::GoToRadio,
+                            ActionContext::Episode(episode.clone().into()),
+                            client_pub,
+                            &data,
+                            ui,
+                        )?;
+                    }
+                    rspotify::model::PlayableItem::Unknown(_) => {}
+                }
+            }
+        }
         Command::ShowActionsOnCurrentTrack => {
             if let Some(currently_playing) = state.player.read().currently_playing() {
                 match currently_playing {

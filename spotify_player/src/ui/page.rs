@@ -1152,7 +1152,7 @@ pub fn render_commands_help_page(
             },
             HelpRow {
                 section: "Search TUI",
-                shortcuts: format_shortcuts(&["r"]),
+                shortcuts: format_shortcuts(&["r s"]),
                 description: "open radio for the selected item".to_string(),
             },
             HelpRow {
@@ -1353,6 +1353,9 @@ fn help_section(command: Command) -> &'static str {
         | Command::SeekForward { .. }
         | Command::SeekBackward { .. }
         | Command::RefreshPlayback
+        | Command::GoToRadioFromSelectedItem
+        | Command::GoToRadioFromCurrentTrack
+        | Command::GoToRadioFromCurrentContext
         | Command::SwitchDevice
         | Command::ShowActionsOnSelectedItem
         | Command::ShowActionsOnCurrentTrack

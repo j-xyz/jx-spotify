@@ -52,11 +52,11 @@ impl Default for KeymapConfig {
                     command: Command::ResumePause,
                 },
                 Keymap {
-                    key_sequence: "R".into(),
+                    key_sequence: "m r".into(),
                     command: Command::Repeat,
                 },
                 Keymap {
-                    key_sequence: "X".into(),
+                    key_sequence: "m s".into(),
                     command: Command::Shuffle,
                 },
                 Keymap {
@@ -88,10 +88,6 @@ impl Default for KeymapConfig {
                     command: Command::ChooseSelected,
                 },
                 Keymap {
-                    key_sequence: "r".into(),
-                    command: Command::RefreshPlayback,
-                },
-                Keymap {
                     key_sequence: "/".into(),
                     command: Command::Search,
                 },
@@ -104,15 +100,27 @@ impl Default for KeymapConfig {
                     command: Command::AddSelectedItemToQueue,
                 },
                 Keymap {
-                    key_sequence: "g a".into(),
+                    key_sequence: "r s".into(),
+                    command: Command::GoToRadioFromSelectedItem,
+                },
+                Keymap {
+                    key_sequence: "r c".into(),
+                    command: Command::GoToRadioFromCurrentTrack,
+                },
+                Keymap {
+                    key_sequence: "r x".into(),
+                    command: Command::GoToRadioFromCurrentContext,
+                },
+                Keymap {
+                    key_sequence: "a s".into(),
                     command: Command::ShowActionsOnSelectedItem,
                 },
                 Keymap {
-                    key_sequence: "a".into(),
+                    key_sequence: "a c".into(),
                     command: Command::ShowActionsOnCurrentTrack,
                 },
                 Keymap {
-                    key_sequence: "A".into(),
+                    key_sequence: "a x".into(),
                     command: Command::ShowActionsOnCurrentContext,
                 },
                 #[cfg(feature = "streaming")]
