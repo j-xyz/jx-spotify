@@ -2,6 +2,45 @@ use super::*;
 use crate::{command::construct_artist_actions, utils::filtered_items_from_query};
 use anyhow::Context;
 
+pub fn try_open_shortcut_family_popup(key: Key, ui: &mut UIStateGuard) -> bool {
+    let title = match key {
+        Key::None(crossterm::event::KeyCode::Char('g')) => "go to",
+        Key::None(crossterm::event::KeyCode::Char('r')) => "radio",
+        Key::None(crossterm::event::KeyCode::Char('m')) => "mode",
+        Key::None(crossterm::event::KeyCode::Char('a')) => "actions",
+        _ => return false,
+    };
+
+    let prefix = KeySequence { keys: vec![key] };
+    let items = config::get_config()
+        .keymap_config
+        .find_matched_prefix_keymaps(&prefix)
+        .into_iter()
+        .filter_map(|keymap| {
+            let mut suffix = keymap.clone();
+            suffix.key_sequence.keys.drain(0..1);
+            (suffix.key_sequence.keys.len() == 1 && suffix.command != Command::None).then_some(
+                crate::state::ShortcutFamilyItem {
+                    trigger: suffix.key_sequence,
+                    key_sequence: keymap.key_sequence.clone(),
+                    command: suffix.command,
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+
+    if items.is_empty() {
+        return false;
+    }
+
+    ui.popup = Some(PopupState::ShortcutFamily {
+        title: title.to_string(),
+        items,
+        list_state: ListState::default(),
+    });
+    true
+}
+
 pub fn handle_key_sequence_for_popup(
     key_sequence: &KeySequence,
     client_pub: &flume::Sender<ClientRequest>,
@@ -15,6 +54,14 @@ pub fn handle_key_sequence_for_popup(
         }
         PopupState::PlaylistCreate { .. } => {
             return handle_key_sequence_for_create_playlist_popup(key_sequence, client_pub, ui);
+        }
+        PopupState::ShortcutFamily { .. } => {
+            return handle_key_sequence_for_shortcut_family_popup(
+                key_sequence,
+                client_pub,
+                state,
+                ui,
+            );
         }
         PopupState::ActionList(item, ..) => {
             return handle_key_sequence_for_action_list_popup(
@@ -44,6 +91,9 @@ pub fn handle_key_sequence_for_popup(
         PopupState::Search { .. } => anyhow::bail!("search popup should be handled before"),
         PopupState::PlaylistCreate { .. } => {
             anyhow::bail!("create playlist popup should be handled before")
+        }
+        PopupState::ShortcutFamily { .. } => {
+            anyhow::bail!("shortcut family popup should be handled before")
         }
         PopupState::ActionList(..) => {
             anyhow::bail!("action list popup should be handled before")
@@ -300,6 +350,63 @@ pub fn handle_key_sequence_for_popup(
             )
         }
     }
+}
+
+fn handle_key_sequence_for_shortcut_family_popup(
+    key_sequence: &KeySequence,
+    client_pub: &flume::Sender<ClientRequest>,
+    state: &SharedState,
+    ui: &mut UIStateGuard,
+) -> Result<bool> {
+    if let Some(entry) = shortcut_family_entry_from_key_sequence(key_sequence, ui) {
+        ui.popup = None;
+        return super::dispatch_key_sequence(&entry.key_sequence, client_pub, state, ui);
+    }
+
+    let Some(command) = config::get_config()
+        .keymap_config
+        .find_command_from_key_sequence(key_sequence)
+    else {
+        return Ok(false);
+    };
+
+    let n_items = match ui.popup.as_ref() {
+        Some(PopupState::ShortcutFamily { items, .. }) => items.len(),
+        _ => return Ok(false),
+    };
+
+    handle_command_for_list_popup(
+        command,
+        ui,
+        n_items,
+        |_, _| {},
+        |ui: &mut UIStateGuard, id: usize| -> Result<()> {
+            let entry = match ui.popup.as_ref() {
+                Some(PopupState::ShortcutFamily { items, .. }) => items[id].clone(),
+                _ => return Ok(()),
+            };
+            ui.popup = None;
+            super::dispatch_key_sequence(&entry.key_sequence, client_pub, state, ui)?;
+            Ok(())
+        },
+        |ui: &mut UIStateGuard| {
+            ui.popup = None;
+        },
+    )
+}
+
+fn shortcut_family_entry_from_key_sequence(
+    key_sequence: &KeySequence,
+    ui: &UIStateGuard,
+) -> Option<crate::state::ShortcutFamilyItem> {
+    let PopupState::ShortcutFamily { items, .. } = ui.popup.as_ref()? else {
+        return None;
+    };
+
+    items
+        .iter()
+        .find(|item| item.trigger == *key_sequence)
+        .cloned()
 }
 
 fn handle_key_sequence_for_create_playlist_popup(

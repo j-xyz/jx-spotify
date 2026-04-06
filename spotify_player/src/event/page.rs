@@ -630,7 +630,7 @@ fn radio_search_tui_item(
         _ => anyhow::bail!("expect a search tui page"),
     };
 
-    let (seed_uri, seed_name) = {
+    let (seed_uri, seed_name, recent_track_seed) = {
         let data = state.data.read();
         match mode {
             SearchTuiMode::Global => {
@@ -641,15 +641,16 @@ fn radio_search_tui_item(
                 let item = results.items[selected].clone();
                 match item {
                     search_tui::SearchTuiItem::Track { track, .. } => {
-                        remember_recent_track_seed(state, &track, RecentTrackSeedSource::Radio);
-                        (track.id.uri(), track.name)
+                        (track.id.uri(), track.name.clone(), Some(track))
                     }
                     search_tui::SearchTuiItem::Artist { artist, .. } => {
-                        (artist.id.uri(), artist.name)
+                        (artist.id.uri(), artist.name, None)
                     }
-                    search_tui::SearchTuiItem::Album { album, .. } => (album.id.uri(), album.name),
+                    search_tui::SearchTuiItem::Album { album, .. } => {
+                        (album.id.uri(), album.name, None)
+                    }
                     search_tui::SearchTuiItem::Playlist { playlist, .. } => {
-                        (playlist.id.uri(), playlist.name)
+                        (playlist.id.uri(), playlist.name, None)
                     }
                 }
             }
@@ -661,11 +662,14 @@ fn radio_search_tui_item(
                     return Ok(false);
                 }
                 let track = tracks[selected].clone();
-                remember_recent_track_seed(state, &track, RecentTrackSeedSource::Radio);
-                (track.id.uri(), track.name)
+                (track.id.uri(), track.name.clone(), Some(track))
             }
         }
     };
+
+    if let Some(track) = recent_track_seed {
+        remember_recent_track_seed(state, &track, RecentTrackSeedSource::Radio);
+    }
 
     super::handle_go_to_radio(&seed_uri, &seed_name, ui, client_pub)?;
     Ok(true)

@@ -11,9 +11,9 @@ use crate::{
         BrowsePageUIState, Context, ContextId, ContextPageType, ContextPageUIState, DataReadGuard,
         Focusable, Id, Item, ItemId, LibraryFocusState, LibraryPageUIState, PageState, PageType,
         PlayableId, Playback, PlaylistCreateCurrentField, PlaylistFolderItem, PlaylistId,
-        PlaylistPopupAction, PopupState, SearchFocusState, SearchPageUIState, SharedState, ShowId,
-        Track, TrackId, TrackOrder, TracksId, UIStateGuard, USER_LIKED_TRACKS_ID,
-        USER_RECENTLY_PLAYED_TRACKS_ID, USER_TOP_TRACKS_ID,
+        PlaylistPopupAction, PopupState, SearchFocusState, SearchPageUIState, SearchTuiFocus,
+        SharedState, ShowId, Track, TrackId, TrackOrder, TracksId, UIStateGuard,
+        USER_LIKED_TRACKS_ID, USER_RECENTLY_PLAYED_TRACKS_ID, USER_TOP_TRACKS_ID,
     },
     ui::{single_line_input::LineInput, Orientation},
     utils::parse_uri,
@@ -151,6 +151,21 @@ fn handle_key_event(
     let key: Key = event.into();
     let mut ui = state.ui.lock();
 
+    if !ui.input_key_sequence.keys.is_empty() && key == Key::None(KeyCode::Esc) {
+        ui.input_key_sequence.keys.clear();
+        ui.count_prefix = None;
+        return Ok(());
+    }
+
+    if ui.popup.is_none()
+        && ui.input_key_sequence.keys.is_empty()
+        && !page_accepts_text_input(&ui)
+        && popup::try_open_shortcut_family_popup(key, &mut ui)
+    {
+        ui.count_prefix = None;
+        return Ok(());
+    }
+
     let mut key_sequence = ui.input_key_sequence.clone();
     key_sequence.keys.push(key);
 
@@ -165,28 +180,7 @@ fn handle_key_event(
         "Handling key event: {event:?}, current key sequence: {key_sequence:?}, count prefix: {:?}",
         ui.count_prefix
     );
-    let handled = {
-        if ui.popup.is_none() {
-            page::handle_key_sequence_for_page(&key_sequence, client_pub, state, &mut ui)?
-        } else {
-            popup::handle_key_sequence_for_popup(&key_sequence, client_pub, state, &mut ui)?
-        }
-    };
-
-    // if the key sequence is not handled, let the global handler handle it
-    let handled = if handled {
-        true
-    } else {
-        match keymap_config.find_command_or_action_from_key_sequence(&key_sequence) {
-            Some(CommandOrAction::Action(action, target)) => {
-                handle_global_action(action, target, client_pub, state, &mut ui)?
-            }
-            Some(CommandOrAction::Command(command)) => {
-                handle_global_command(command, client_pub, state, &mut ui)?
-            }
-            None => false,
-        }
-    };
+    let handled = dispatch_key_sequence(&key_sequence, client_pub, state, &mut ui)?;
 
     // if handled, clear the key sequence and count prefix
     // otherwise, the current key sequence can be a prefix of a command's shortcut
@@ -217,6 +211,46 @@ fn handle_key_event(
         }
     }
     Ok(())
+}
+
+fn page_accepts_text_input(ui: &UIStateGuard) -> bool {
+    match ui.current_page() {
+        PageState::Search { state, .. } => state.focus == SearchFocusState::Input,
+        PageState::SearchTui { state, .. } => state.focus == SearchTuiFocus::Search,
+        _ => false,
+    }
+}
+
+pub(super) fn dispatch_key_sequence(
+    key_sequence: &KeySequence,
+    client_pub: &flume::Sender<ClientRequest>,
+    state: &SharedState,
+    ui: &mut UIStateGuard,
+) -> Result<bool> {
+    let handled = {
+        if ui.popup.is_none() {
+            page::handle_key_sequence_for_page(key_sequence, client_pub, state, ui)?
+        } else {
+            popup::handle_key_sequence_for_popup(key_sequence, client_pub, state, ui)?
+        }
+    };
+
+    if handled {
+        return Ok(true);
+    }
+
+    match config::get_config()
+        .keymap_config
+        .find_command_or_action_from_key_sequence(key_sequence)
+    {
+        Some(CommandOrAction::Action(action, target)) => {
+            handle_global_action(action, target, client_pub, state, ui)
+        }
+        Some(CommandOrAction::Command(command)) => {
+            handle_global_command(command, client_pub, state, ui)
+        }
+        None => Ok(false),
+    }
 }
 
 pub fn handle_action_in_context(

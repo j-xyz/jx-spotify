@@ -1,8 +1,9 @@
 use crate::{command::Command, utils::filtered_items_from_query};
+use crossterm::event::KeyCode;
 
 use super::{
     config, utils, Cell, Constraint, Frame, Layout, Line, Paragraph, PlaylistCreateCurrentField,
-    PlaylistPopupAction, PopupState, Rect, Row, SharedState, Table, UIStateGuard,
+    PlaylistPopupAction, PopupState, Rect, Row, SharedState, Span, Table, UIStateGuard,
 };
 
 const SHORTCUT_TABLE_N_COLUMNS: usize = 3;
@@ -69,6 +70,27 @@ pub fn render_popup(
                 let rect = utils::render_panel(frame, &ui.theme, chunks[1], "search", None, true);
                 frame.render_widget(Paragraph::new(format!("/{query}")), rect);
                 (chunks[0], true)
+            }
+            PopupState::ShortcutFamily { title, items, .. } => {
+                let title = title.clone();
+                let display_items = items
+                    .iter()
+                    .map(|item| {
+                        (
+                            format!("{}  {}", item.trigger.display_help(), item.command.desc()),
+                            false,
+                        )
+                    })
+                    .collect();
+                let rect = render_list_popup(
+                    frame,
+                    rect,
+                    &title,
+                    display_items,
+                    items.len() as u16 + 2,
+                    ui,
+                );
+                (rect, false)
             }
             PopupState::ActionList(item, _) => {
                 let rect = render_list_popup(
@@ -251,13 +273,28 @@ pub fn render_shortcut_help_popup(frame: &mut Frame, ui: &mut UIStateGuard, rect
     if matches.is_empty() {
         rect
     } else {
-        let chunks = Layout::vertical([Constraint::Fill(0), Constraint::Length(7)]).split(rect);
+        let popup_height = (matches.len().min(8) as u16) + 2;
+        let chunks =
+            Layout::vertical([Constraint::Fill(0), Constraint::Length(popup_height)]).split(rect);
 
-        let meta = Line::from(vec![super::Span::styled(
-            input.display_help(),
-            ui.theme.page_desc().add_modifier(super::Modifier::BOLD),
-        )]);
-        let rect = utils::render_panel(frame, &ui.theme, chunks[1], "shortcuts", Some(meta), true);
+        let meta = Line::from(vec![
+            super::Span::styled(
+                input.display_help(),
+                ui.theme.page_desc().add_modifier(super::Modifier::BOLD),
+            ),
+            Span::raw("  "),
+            Span::styled("press second key", ui.theme.playback_metadata()),
+            Span::raw("  "),
+            Span::styled("esc cancels", ui.theme.playlist_desc()),
+        ]);
+        let rect = utils::render_panel(
+            frame,
+            &ui.theme,
+            chunks[1],
+            shortcut_family_title(input),
+            Some(meta),
+            true,
+        );
 
         let help_table = Table::new(
             matches
@@ -277,5 +314,15 @@ pub fn render_shortcut_help_popup(frame: &mut Frame, ui: &mut UIStateGuard, rect
 
         frame.render_widget(help_table, rect);
         chunks[0]
+    }
+}
+
+fn shortcut_family_title(input: &crate::key::KeySequence) -> &str {
+    match input.keys.as_slice() {
+        [crate::key::Key::None(KeyCode::Char('g'))] => "go to",
+        [crate::key::Key::None(KeyCode::Char('r'))] => "radio",
+        [crate::key::Key::None(KeyCode::Char('m'))] => "mode",
+        [crate::key::Key::None(KeyCode::Char('a'))] => "actions",
+        _ => "shortcuts",
     }
 }

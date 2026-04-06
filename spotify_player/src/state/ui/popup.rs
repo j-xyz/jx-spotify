@@ -16,6 +16,11 @@ pub enum PopupState {
     Search {
         query: String,
     },
+    ShortcutFamily {
+        title: String,
+        items: Vec<ShortcutFamilyItem>,
+        list_state: ListState,
+    },
     UserPlaylistList(PlaylistPopupAction, ListState),
     UserFollowedArtistList(ListState),
     UserSavedAlbumList(ListState),
@@ -28,6 +33,13 @@ pub enum PopupState {
         desc: LineInput,
         current_field: PlaylistCreateCurrentField,
     },
+}
+
+#[derive(Debug, Clone)]
+pub struct ShortcutFamilyItem {
+    pub trigger: crate::key::KeySequence,
+    pub key_sequence: crate::key::KeySequence,
+    pub command: command::Command,
 }
 
 #[derive(Debug, Clone)]
@@ -70,7 +82,8 @@ impl PopupState {
     /// gets the (immutable) list state of a (list) popup
     pub fn list_state(&self) -> Option<&ListState> {
         match self {
-            Self::DeviceList(list_state)
+            Self::ShortcutFamily { list_state, .. }
+            | Self::DeviceList(list_state)
             | Self::UserPlaylistList(.., list_state)
             | Self::UserFollowedArtistList(list_state)
             | Self::UserSavedAlbumList(list_state)
@@ -84,7 +97,8 @@ impl PopupState {
     /// gets the (mutable) list state of a (list) popup
     pub fn list_state_mut(&mut self) -> Option<&mut ListState> {
         match self {
-            Self::DeviceList(list_state)
+            Self::ShortcutFamily { list_state, .. }
+            | Self::DeviceList(list_state)
             | Self::UserPlaylistList(.., list_state)
             | Self::UserFollowedArtistList(list_state)
             | Self::UserSavedAlbumList(list_state)

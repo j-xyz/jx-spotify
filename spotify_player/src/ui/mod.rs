@@ -30,6 +30,7 @@ pub mod streaming;
 pub mod utils;
 
 const INTERACTION_GRACE_PERIOD: std::time::Duration = std::time::Duration::from_millis(400);
+const SHORTCUT_PREFIX_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(1200);
 const LOADING_REFRESH_DURATION: std::time::Duration = std::time::Duration::from_millis(100);
 const PLAYBACK_REFRESH_FLOOR: std::time::Duration = std::time::Duration::from_millis(250);
 const IDLE_REFRESH_DURATION: std::time::Duration = std::time::Duration::from_millis(1000);
@@ -46,6 +47,12 @@ pub fn run(state: &SharedState) -> Result<()> {
             if !ui.is_running {
                 clean_up(terminal).context("clean up UI resources")?;
                 std::process::exit(0);
+            }
+
+            if !ui.input_key_sequence.keys.is_empty()
+                && ui.last_interaction_at.elapsed() >= SHORTCUT_PREFIX_TIMEOUT
+            {
+                ui.input_key_sequence.keys.clear();
             }
 
             let terminal_size = terminal.size()?;
@@ -82,6 +89,10 @@ fn next_refresh_duration(state: &SharedState, ui: &UIStateGuard) -> std::time::D
             .app_refresh_duration_in_ms
             .max(1),
     );
+
+    if !ui.input_key_sequence.keys.is_empty() {
+        return configured_refresh_duration;
+    }
 
     if ui.last_interaction_at.elapsed() <= INTERACTION_GRACE_PERIOD {
         return configured_refresh_duration;
