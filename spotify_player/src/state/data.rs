@@ -8,7 +8,7 @@ use crate::utils::create_private_file;
 
 use super::model::{
     Album, Artist, Category, Context, ContextId, Id, Playlist, PlaylistFolderItem,
-    PlaylistFolderNode, SearchResults, Show, Track,
+    PlaylistFolderNode, RecentTrackSeed, RecentTrackSeedSource, SearchResults, Show, Track,
 };
 use super::Lyrics;
 
@@ -22,6 +22,7 @@ pub enum FileCacheKey {
     SavedShows,
     SavedAlbums,
     SavedTracks,
+    RecentTrackSeeds,
 }
 
 /// default time-to-live cache duration
@@ -45,6 +46,7 @@ pub struct UserData {
     pub saved_shows: Vec<Show>,
     pub saved_albums: Vec<Album>,
     pub saved_tracks: HashMap<String, Track>,
+    pub recent_track_seeds: Vec<RecentTrackSeed>,
 }
 
 /// the application's in-memory caches
@@ -141,6 +143,11 @@ impl UserData {
                 .unwrap_or_default(),
             saved_tracks: load_data_from_file_cache(FileCacheKey::SavedTracks, cache_folder)
                 .unwrap_or_default(),
+            recent_track_seeds: load_data_from_file_cache(
+                FileCacheKey::RecentTrackSeeds,
+                cache_folder,
+            )
+            .unwrap_or_default(),
         }
     }
 
@@ -188,6 +195,16 @@ impl UserData {
     /// Check if a track is a liked track
     pub fn is_liked_track(&self, track: &Track) -> bool {
         self.saved_tracks.contains_key(&track.id.uri())
+    }
+
+    pub fn push_recent_track_seed(&mut self, track: Track, source: RecentTrackSeedSource) {
+        const RECENT_TRACK_SEED_LIMIT: usize = 24;
+
+        self.recent_track_seeds
+            .retain(|seed| seed.track.id != track.id);
+        self.recent_track_seeds
+            .insert(0, RecentTrackSeed { track, source });
+        self.recent_track_seeds.truncate(RECENT_TRACK_SEED_LIMIT);
     }
 }
 

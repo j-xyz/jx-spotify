@@ -11,6 +11,22 @@ pub fn format_duration(duration: &chrono::Duration) -> String {
     format!("{}:{:02}", secs / 60, secs % 60)
 }
 
+/// formats a time duration into a compact human-readable "h/m/s" format
+pub fn format_duration_hms(duration: &chrono::Duration) -> String {
+    let total_secs = duration.num_seconds().max(0);
+    let hours = total_secs / 3600;
+    let minutes = (total_secs % 3600) / 60;
+    let seconds = total_secs % 60;
+
+    if hours > 0 {
+        format!("{hours}h {minutes}m {seconds}s")
+    } else if minutes > 0 {
+        format!("{minutes}m {seconds}s")
+    } else {
+        format!("{seconds}s")
+    }
+}
+
 pub fn map_join<T, F>(v: &[T], f: F, sep: &str) -> String
 where
     F: Fn(&T) -> &str,

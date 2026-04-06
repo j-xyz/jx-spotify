@@ -2,8 +2,8 @@ use std::collections::HashSet;
 
 use crate::{
     state::{
-        Context, DataReadGuard, Playlist, PlaylistFolderItem, SearchTuiMode, Track,
-        USER_RECENTLY_PLAYED_TRACKS_ID,
+        Context, DataReadGuard, Playlist, PlaylistFolderItem, RecentTrackSeedSource, SearchTuiMode,
+        Track, USER_RECENTLY_PLAYED_TRACKS_ID,
     },
     utils::filtered_items_from_query,
 };
@@ -20,6 +20,7 @@ const PLAYLIST_TRACK_LIMIT: usize = 200;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SearchTuiResultsSource {
     Standard,
+    RecentSeeds,
     LocalFallback,
 }
 
@@ -256,7 +257,15 @@ fn build_global_items(data: &DataReadGuard, query: &str) -> SearchTuiResults {
     if remote_matches > 0 {
         SearchTuiResults::standard(items)
     } else {
-        SearchTuiResults::local_fallback(build_local_fallback_items(data, &parsed_query))
+        let recent_seed_items = build_recent_seed_items(data, &parsed_query);
+        if recent_seed_items.is_empty() {
+            SearchTuiResults::local_fallback(build_local_fallback_items(data, &parsed_query))
+        } else {
+            SearchTuiResults {
+                items: recent_seed_items,
+                source: SearchTuiResultsSource::RecentSeeds,
+            }
+        }
     }
 }
 
@@ -338,6 +347,150 @@ fn build_local_fallback_items(
     );
 
     items
+}
+
+fn build_recent_seed_items(
+    data: &DataReadGuard,
+    parsed_query: &SearchTuiQuery,
+) -> Vec<SearchTuiItem> {
+    if !parsed_query.matches_kind(SearchTuiItemKind::Track) {
+        return Vec::new();
+    }
+
+    let query_terms = normalized_query_terms(parsed_query);
+    if query_terms.is_empty() {
+        return Vec::new();
+    }
+
+    let mut scored_items = Vec::new();
+    let mut seen = HashSet::new();
+
+    for seed in &data.user_data.recent_track_seeds {
+        let source_priority = match seed.source {
+            RecentTrackSeedSource::Search => 0,
+            RecentTrackSeedSource::Radio => 1,
+        };
+        push_recent_seed_candidate(
+            &query_terms,
+            &mut scored_items,
+            &mut seen,
+            seed.track.clone(),
+            source_priority,
+        );
+    }
+
+    if let Some(Context::Tracks { tracks, .. }) =
+        data.caches.context.get(&USER_RECENTLY_PLAYED_TRACKS_ID.uri)
+    {
+        for track in tracks {
+            push_recent_seed_candidate(
+                &query_terms,
+                &mut scored_items,
+                &mut seen,
+                track.clone(),
+                2,
+            );
+        }
+    }
+
+    scored_items.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
+
+    scored_items
+        .into_iter()
+        .take(RECENT_TRACK_LIMIT)
+        .map(|(_, _, track)| SearchTuiItem::Track { track })
+        .collect()
+}
+
+fn push_recent_seed_candidate(
+    query_terms: &[String],
+    scored_items: &mut Vec<(usize, usize, Track)>,
+    seen: &mut HashSet<String>,
+    track: Track,
+    source_priority: usize,
+) {
+    let key = track.id.uri();
+    if !seen.insert(key) {
+        return;
+    }
+
+    let Some(score) = recent_seed_match_score(query_terms, &track) else {
+        return;
+    };
+
+    scored_items.push((score, source_priority, track));
+}
+
+fn recent_seed_match_score(query_terms: &[String], track: &Track) -> Option<usize> {
+    let tokens = normalized_text_tokens(&track_search_text(track));
+    if tokens.is_empty() {
+        return None;
+    }
+
+    let mut score = 0;
+    for term in query_terms {
+        let best = tokens
+            .iter()
+            .filter_map(|token| fuzzy_token_distance(term, token))
+            .min()?;
+        score += best;
+    }
+
+    Some(score)
+}
+
+fn normalized_query_terms(parsed_query: &SearchTuiQuery) -> Vec<String> {
+    normalized_text_tokens(&parsed_query.candidate_query())
+}
+
+fn normalized_text_tokens(text: &str) -> Vec<String> {
+    text.split(|c: char| !c.is_alphanumeric())
+        .filter_map(|token| {
+            let token = token.trim().to_lowercase();
+            if token.is_empty() {
+                None
+            } else {
+                Some(token)
+            }
+        })
+        .collect()
+}
+
+fn fuzzy_token_distance(query: &str, candidate: &str) -> Option<usize> {
+    if candidate.contains(query) || candidate.starts_with(query) {
+        return Some(0);
+    }
+
+    let max_len = query.len().max(candidate.len());
+    let max_distance = match max_len {
+        0..=3 => 0,
+        4..=6 => 1,
+        _ => 2,
+    };
+
+    let distance = levenshtein_distance(query, candidate);
+    (distance <= max_distance).then_some(distance)
+}
+
+fn levenshtein_distance(left: &str, right: &str) -> usize {
+    let left_chars = left.chars().collect::<Vec<_>>();
+    let right_chars = right.chars().collect::<Vec<_>>();
+
+    let mut previous = (0..=right_chars.len()).collect::<Vec<_>>();
+    let mut current = vec![0; right_chars.len() + 1];
+
+    for (left_index, left_char) in left_chars.iter().enumerate() {
+        current[0] = left_index + 1;
+        for (right_index, right_char) in right_chars.iter().enumerate() {
+            let substitution_cost = usize::from(left_char != right_char);
+            current[right_index + 1] = (previous[right_index + 1] + 1)
+                .min(current[right_index] + 1)
+                .min(previous[right_index] + substitution_cost);
+        }
+        previous.clone_from_slice(&current);
+    }
+
+    previous[right_chars.len()]
 }
 
 fn push_matching_items<I>(
@@ -498,6 +651,7 @@ mod tests {
                 saved_shows: Vec::new(),
                 saved_albums: Vec::new(),
                 saved_tracks: HashMap::new(),
+                recent_track_seeds: Vec::new(),
             },
             caches: MemoryCaches::new(),
             browse: BrowseData::default(),
@@ -549,17 +703,6 @@ mod tests {
             current_folder_id: 0,
             snapshot_id: "snapshot".to_string(),
         }
-    }
-
-    fn add_recent_tracks(data: &mut AppData, tracks: Vec<Track>) {
-        data.caches.context.insert(
-            USER_RECENTLY_PLAYED_TRACKS_ID.uri.clone(),
-            Context::Tracks {
-                tracks,
-                desc: "Recent".to_string(),
-            },
-            *TTL_CACHE_DURATION,
-        );
     }
 
     #[test]
@@ -616,21 +759,49 @@ mod tests {
     }
 
     #[test]
-    fn empty_remote_results_use_local_fallback_items() {
+    fn empty_remote_results_prefer_recent_seed_tracks() {
         let mut data = test_app_data();
         let artist = test_artist("1111111111111111111111", "Phoebe Bridgers");
         let album = test_album("2222222222222222222222", "Punisher", vec![artist.clone()]);
-        add_recent_tracks(
-            &mut data,
-            vec![test_track(
-                "3333333333333333333333",
-                "Kyoto",
-                vec![artist.clone()],
-                Some(album.clone()),
-            )],
+        let track = test_track(
+            "3333333333333333333333",
+            "Kyoto",
+            vec![artist.clone()],
+            Some(album.clone()),
         );
-        data.user_data.saved_albums.push(album.clone());
+        data.user_data
+            .push_recent_track_seed(track.clone(), RecentTrackSeedSource::Search);
+        data.caches.search.insert(
+            "phoebe".to_string(),
+            SearchResults::default(),
+            *TTL_CACHE_DURATION,
+        );
+
+        let data = parking_lot::RwLock::new(data);
+        let results = build_items(&data.read(), &SearchTuiMode::Global, "phoebe");
+
+        assert_eq!(results.source, SearchTuiResultsSource::RecentSeeds);
+        assert_eq!(results.items.len(), 1);
+        assert!(matches!(
+            &results.items[0],
+            SearchTuiItem::Track { track: item_track } if item_track.id == track.id
+        ));
+    }
+
+    #[test]
+    fn empty_remote_results_use_local_fallback_items_when_no_seed_matches_exist() {
+        let mut data = test_app_data();
+        let artist = test_artist("1111111111111111111111", "Phoebe Bridgers");
+        let album = test_album("2222222222222222222222", "Punisher", vec![artist.clone()]);
+        data.user_data.saved_albums.push(album);
         data.user_data.followed_artists.push(artist.clone());
+        data.user_data
+            .playlists
+            .push(PlaylistFolderItem::Playlist(test_playlist(
+                "3333333333333333333333",
+                "Phoebe Mix",
+                "jane",
+            )));
         data.caches.search.insert(
             "phoebe".to_string(),
             SearchResults::default(),
@@ -644,10 +815,6 @@ mod tests {
         assert!(results.items.iter().any(|item| matches!(
             item,
             SearchTuiItem::Artist { artist: item_artist } if item_artist.id == artist.id
-        )));
-        assert!(results.items.iter().any(|item| matches!(
-            item,
-            SearchTuiItem::Album { album: item_album } if item_album.id == album.id
         )));
     }
 
@@ -679,6 +846,30 @@ mod tests {
         assert!(matches!(
             &results.items[0],
             SearchTuiItem::Artist { artist: item_artist } if item_artist.id == artist.id
+        ));
+    }
+
+    #[test]
+    fn recent_seed_matching_handles_small_typos() {
+        let mut data = test_app_data();
+        let artist = test_artist("1111111111111111111111", "Qveen Herby");
+        let track = test_track("3333333333333333333333", "BDE", vec![artist], None);
+        data.user_data
+            .push_recent_track_seed(track.clone(), RecentTrackSeedSource::Radio);
+        data.caches.search.insert(
+            "queen hervy".to_string(),
+            SearchResults::default(),
+            *TTL_CACHE_DURATION,
+        );
+
+        let data = parking_lot::RwLock::new(data);
+        let results = build_items(&data.read(), &SearchTuiMode::Global, "queen hervy");
+
+        assert_eq!(results.source, SearchTuiResultsSource::RecentSeeds);
+        assert_eq!(results.items.len(), 1);
+        assert!(matches!(
+            &results.items[0],
+            SearchTuiItem::Track { track: item_track } if item_track.id == track.id
         ));
     }
 

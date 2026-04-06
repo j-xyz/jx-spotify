@@ -183,6 +183,18 @@ pub struct Show {
     pub name: String,
 }
 
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecentTrackSeedSource {
+    Search,
+    Radio,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct RecentTrackSeed {
+    pub track: Track,
+    pub source: RecentTrackSeedSource,
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
 /// A Spotify episode (podcast episode)
 pub struct Episode {

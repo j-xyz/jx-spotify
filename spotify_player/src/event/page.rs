@@ -1,8 +1,14 @@
 use anyhow::Context as _;
 use command::CommandOrAction;
 
-use crate::command::{construct_album_actions, construct_playlist_actions, construct_show_actions};
-use crate::state::{SearchTuiFocus, SearchTuiMode, SearchTuiPageUIState};
+use crate::command::{
+    construct_album_actions, construct_artist_actions, construct_playlist_actions,
+    construct_show_actions, construct_track_actions,
+};
+use crate::state::{
+    store_data_into_file_cache, FileCacheKey, RecentTrackSeedSource, SearchTuiFocus, SearchTuiMode,
+    SearchTuiPageUIState, Track,
+};
 use crate::{search_tui, ui::single_line_input::LineInput};
 use crossterm::event::KeyCode;
 use rspotify::model::Offset;
@@ -62,6 +68,11 @@ fn handle_key_sequence_for_search_tui_page(
     state: &SharedState,
     ui: &mut UIStateGuard,
 ) -> Result<bool> {
+    if let Some(handled) = handle_search_tui_command_or_action(key_sequence, client_pub, state, ui)?
+    {
+        return Ok(handled);
+    }
+
     if key_sequence.keys.len() != 1 {
         return Ok(false);
     }
@@ -133,6 +144,33 @@ fn handle_key_sequence_for_search_tui_page(
     } else {
         Ok(false)
     }
+}
+
+fn handle_search_tui_command_or_action(
+    key_sequence: &KeySequence,
+    client_pub: &flume::Sender<ClientRequest>,
+    state: &SharedState,
+    ui: &mut UIStateGuard,
+) -> Result<Option<bool>> {
+    let matched = config::get_config()
+        .keymap_config
+        .find_command_or_action_from_key_sequence(key_sequence);
+
+    Ok(match matched {
+        Some(CommandOrAction::Command(Command::ChooseSelected)) => {
+            Some(choose_search_tui_item(client_pub, state, ui)?)
+        }
+        Some(CommandOrAction::Command(Command::ShowActionsOnSelectedItem)) => {
+            Some(show_actions_on_search_tui_item(state, ui)?)
+        }
+        Some(CommandOrAction::Command(Command::AddSelectedItemToQueue)) => Some(
+            add_selected_search_tui_item_to_queue(client_pub, state, ui)?,
+        ),
+        Some(CommandOrAction::Action(action, ActionTarget::SelectedItem)) => Some(
+            handle_action_for_selected_search_tui_item(action, client_pub, state, ui)?,
+        ),
+        _ => None,
+    })
 }
 
 fn search_tui_focus(ui: &UIStateGuard) -> SearchTuiFocus {
@@ -240,6 +278,138 @@ fn search_tui_len(state: &SharedState, ui: &mut UIStateGuard) -> usize {
     }
 }
 
+enum SearchTuiSelection {
+    Global(search_tui::SearchTuiItem),
+    ContextTrack(Track),
+}
+
+fn selected_search_tui_item(
+    state: &SharedState,
+    ui: &mut UIStateGuard,
+) -> Result<Option<SearchTuiSelection>> {
+    let selected = search_tui_selected(ui);
+    let (mode, query) = match ui.current_page() {
+        PageState::SearchTui { line_input, state } => (state.mode.clone(), line_input.get_text()),
+        _ => anyhow::bail!("expect a search tui page"),
+    };
+
+    let data = state.data.read();
+    let selection = match mode {
+        SearchTuiMode::Global => search_tui::build_items(&data, &SearchTuiMode::Global, &query)
+            .items
+            .get(selected)
+            .cloned()
+            .map(SearchTuiSelection::Global),
+        SearchTuiMode::Playlist { .. }
+        | SearchTuiMode::Album { .. }
+        | SearchTuiMode::Artist { .. } => search_tui::build_context_tracks(&data, &mode, &query)
+            .get(selected)
+            .cloned()
+            .map(SearchTuiSelection::ContextTrack),
+    };
+
+    Ok(selection)
+}
+
+fn show_actions_on_search_tui_item(state: &SharedState, ui: &mut UIStateGuard) -> Result<bool> {
+    let Some(selection) = selected_search_tui_item(state, ui)? else {
+        return Ok(false);
+    };
+
+    let data = state.data.read();
+    match selection {
+        SearchTuiSelection::Global(search_tui::SearchTuiItem::Track { track })
+        | SearchTuiSelection::ContextTrack(track) => {
+            let actions = construct_track_actions(&track, &data);
+            ui.popup = Some(PopupState::ActionList(
+                Box::new(ActionListItem::Track(track, actions)),
+                ListState::default(),
+            ));
+        }
+        SearchTuiSelection::Global(search_tui::SearchTuiItem::Artist { artist }) => {
+            let actions = construct_artist_actions(&artist, &data);
+            ui.popup = Some(PopupState::ActionList(
+                Box::new(ActionListItem::Artist(artist, actions)),
+                ListState::default(),
+            ));
+        }
+        SearchTuiSelection::Global(search_tui::SearchTuiItem::Album { album }) => {
+            let actions = construct_album_actions(&album, &data);
+            ui.popup = Some(PopupState::ActionList(
+                Box::new(ActionListItem::Album(album, actions)),
+                ListState::default(),
+            ));
+        }
+        SearchTuiSelection::Global(search_tui::SearchTuiItem::Playlist { playlist }) => {
+            let actions = construct_playlist_actions(&playlist, &data);
+            ui.popup = Some(PopupState::ActionList(
+                Box::new(ActionListItem::Playlist(playlist, actions)),
+                ListState::default(),
+            ));
+        }
+    }
+
+    Ok(true)
+}
+
+fn add_selected_search_tui_item_to_queue(
+    client_pub: &flume::Sender<ClientRequest>,
+    state: &SharedState,
+    ui: &mut UIStateGuard,
+) -> Result<bool> {
+    let Some(selection) = selected_search_tui_item(state, ui)? else {
+        return Ok(false);
+    };
+
+    match selection {
+        SearchTuiSelection::Global(search_tui::SearchTuiItem::Track { track })
+        | SearchTuiSelection::ContextTrack(track) => {
+            client_pub.send(ClientRequest::AddPlayableToQueue(track.id.into()))?;
+            Ok(true)
+        }
+        SearchTuiSelection::Global(search_tui::SearchTuiItem::Album { album }) => {
+            client_pub.send(ClientRequest::AddAlbumToQueue(album.id))?;
+            Ok(true)
+        }
+        SearchTuiSelection::Global(search_tui::SearchTuiItem::Artist { .. })
+        | SearchTuiSelection::Global(search_tui::SearchTuiItem::Playlist { .. }) => Ok(false),
+    }
+}
+
+fn handle_action_for_selected_search_tui_item(
+    action: Action,
+    client_pub: &flume::Sender<ClientRequest>,
+    state: &SharedState,
+    ui: &mut UIStateGuard,
+) -> Result<bool> {
+    let Some(selection) = selected_search_tui_item(state, ui)? else {
+        return Ok(false);
+    };
+
+    let data = state.data.read();
+    match selection {
+        SearchTuiSelection::Global(search_tui::SearchTuiItem::Track { track })
+        | SearchTuiSelection::ContextTrack(track) => {
+            handle_action_in_context(action, ActionContext::Track(track), client_pub, &data, ui)
+        }
+        SearchTuiSelection::Global(search_tui::SearchTuiItem::Artist { artist }) => {
+            handle_action_in_context(action, ActionContext::Artist(artist), client_pub, &data, ui)
+        }
+        SearchTuiSelection::Global(search_tui::SearchTuiItem::Album { album }) => {
+            handle_action_in_context(action, ActionContext::Album(album), client_pub, &data, ui)
+        }
+        SearchTuiSelection::Global(search_tui::SearchTuiItem::Playlist { playlist }) => {
+            handle_action_in_context(
+                action,
+                ActionContext::Playlist(playlist),
+                client_pub,
+                &data,
+                ui,
+            )
+        }
+    }
+}
+
 fn choose_search_tui_item(
     client_pub: &flume::Sender<ClientRequest>,
     state: &SharedState,
@@ -277,6 +447,7 @@ fn choose_search_tui_item(
             }
             let track = tracks[selected].clone();
             drop(data);
+            remember_recent_track_seed(state, &track, RecentTrackSeedSource::Search);
             state.player.write().currently_playing_tracks_id = None;
             let playback = match mode {
                 SearchTuiMode::Playlist {
@@ -341,6 +512,7 @@ fn play_or_open_search_tui_item(
 ) -> Result<bool> {
     match item {
         search_tui::SearchTuiItem::Track { track, .. } => {
+            remember_recent_track_seed(state, &track, RecentTrackSeedSource::Search);
             state.player.write().currently_playing_tracks_id = None;
             client_pub.send(ClientRequest::Player(PlayerRequest::StartPlayback(
                 Playback::URIs(vec![track.id.into()], None),
@@ -448,7 +620,10 @@ fn radio_search_tui_item(
                 }
                 let item = results.items[selected].clone();
                 match item {
-                    search_tui::SearchTuiItem::Track { track, .. } => (track.id.uri(), track.name),
+                    search_tui::SearchTuiItem::Track { track, .. } => {
+                        remember_recent_track_seed(state, &track, RecentTrackSeedSource::Radio);
+                        (track.id.uri(), track.name)
+                    }
                     search_tui::SearchTuiItem::Artist { artist, .. } => {
                         (artist.id.uri(), artist.name)
                     }
@@ -466,6 +641,7 @@ fn radio_search_tui_item(
                     return Ok(false);
                 }
                 let track = tracks[selected].clone();
+                remember_recent_track_seed(state, &track, RecentTrackSeedSource::Radio);
                 (track.id.uri(), track.name)
             }
         }
@@ -473,6 +649,22 @@ fn radio_search_tui_item(
 
     super::handle_go_to_radio(&seed_uri, &seed_name, ui, client_pub)?;
     Ok(true)
+}
+
+fn remember_recent_track_seed(state: &SharedState, track: &Track, source: RecentTrackSeedSource) {
+    let recent_track_seeds = {
+        let mut data = state.data.write();
+        data.user_data.push_recent_track_seed(track.clone(), source);
+        data.user_data.recent_track_seeds.clone()
+    };
+
+    if let Err(err) = store_data_into_file_cache(
+        FileCacheKey::RecentTrackSeeds,
+        &config::get_config().cache_folder,
+        &recent_track_seeds,
+    ) {
+        tracing::warn!("Failed to store recent track seeds: {err:#}");
+    }
 }
 
 fn handle_action_for_library_page(

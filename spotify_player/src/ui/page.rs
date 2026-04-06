@@ -11,7 +11,7 @@ use crate::{
     key::KeySequence,
     search_tui,
     state::{Episode, SearchTuiFocus, SearchTuiMode},
-    utils::format_duration,
+    utils::format_duration_hms,
 };
 
 use super::{
@@ -61,6 +61,49 @@ pub fn render_search_page(
         items
             .iter()
             .map(|i| (to_bidi_string(&i.to_string()), false))
+            .collect()
+    }
+
+    fn search_track_items(items: &[Track]) -> Vec<(String, bool)> {
+        items
+            .iter()
+            .map(|track| {
+                let duration = format_duration_hms(
+                    &chrono::Duration::from_std(track.duration).unwrap_or_default(),
+                );
+                let album = track.album_info();
+                let details = if album.is_empty() {
+                    duration
+                } else {
+                    format!("{album} • {duration}")
+                };
+                (
+                    to_bidi_string(&format!(
+                        "{} • {} ▎ {}",
+                        track.display_name(),
+                        track.artists_info(),
+                        details
+                    )),
+                    false,
+                )
+            })
+            .collect()
+    }
+
+    fn search_episode_items(items: &[Episode]) -> Vec<(String, bool)> {
+        items
+            .iter()
+            .map(|episode| {
+                let duration = format_duration_hms(
+                    &chrono::Duration::from_std(episode.duration).unwrap_or_default(),
+                );
+                let label = if let Some(show) = &episode.show {
+                    format!("{} • {} • {}", episode.name, show.name, duration)
+                } else {
+                    format!("{} • {}", episode.name, duration)
+                };
+                (to_bidi_string(&label), false)
+            })
             .collect()
     }
 
@@ -115,7 +158,7 @@ pub fn render_search_page(
     // 3. Construct the page's widgets
     let (track_list, n_tracks) = {
         let track_items = search_results
-            .map(|s| search_items(&s.tracks))
+            .map(|s| search_track_items(&s.tracks))
             .unwrap_or_default();
 
         let is_active = is_active && focus_state == SearchFocusState::Tracks;
@@ -164,7 +207,7 @@ pub fn render_search_page(
 
     let (episode_list, n_episodes) = {
         let episode_items = search_results
-            .map(|s| search_items(&s.episodes))
+            .map(|s| search_episode_items(&s.episodes))
             .unwrap_or_default();
 
         let is_active = is_active && focus_state == SearchFocusState::Episodes;
@@ -386,9 +429,16 @@ fn search_tui_results_meta_line(
         format!("{count} items"),
         ui.theme.playback_metadata(),
     )];
-    if source == search_tui::SearchTuiResultsSource::LocalFallback {
-        spans.push(Span::styled(" · ", ui.theme.playback_metadata()));
-        spans.push(Span::styled("local fallback", ui.theme.playlist_desc()));
+    match source {
+        search_tui::SearchTuiResultsSource::Standard => {}
+        search_tui::SearchTuiResultsSource::RecentSeeds => {
+            spans.push(Span::styled(" · ", ui.theme.playback_metadata()));
+            spans.push(Span::styled("recent seeds", ui.theme.playlist_desc()));
+        }
+        search_tui::SearchTuiResultsSource::LocalFallback => {
+            spans.push(Span::styled(" · ", ui.theme.playback_metadata()));
+            spans.push(Span::styled("local fallback", ui.theme.playlist_desc()));
+        }
     }
 
     Line::from(spans)
@@ -528,13 +578,23 @@ struct SearchTuiDisplayRow {
 impl From<search_tui::SearchTuiItem> for SearchTuiDisplayRow {
     fn from(item: search_tui::SearchTuiItem) -> Self {
         match item {
-            search_tui::SearchTuiItem::Track { track } => Self {
-                title: format!("{} - {}", track.display_name(), track.artists_info()),
-                secondary: Some(track.album_info()),
-                kind: "song",
-                is_current: false,
-                playlist_title_bold: false,
-            },
+            search_tui::SearchTuiItem::Track { track } => {
+                let album = track.album_info();
+                let duration = format_duration_hms(
+                    &chrono::Duration::from_std(track.duration).unwrap_or_default(),
+                );
+                Self {
+                    title: format!("{} - {}", track.display_name(), track.artists_info()),
+                    secondary: Some(if album.is_empty() {
+                        duration
+                    } else {
+                        format!("{album} • {duration}")
+                    }),
+                    kind: "song",
+                    is_current: false,
+                    playlist_title_bold: false,
+                }
+            }
             search_tui::SearchTuiItem::Artist { artist } => Self {
                 title: artist.name,
                 secondary: None,
@@ -570,9 +630,16 @@ impl From<search_tui::SearchTuiItem> for SearchTuiDisplayRow {
 }
 
 fn search_tui_playlist_row(track: Track) -> SearchTuiDisplayRow {
+    let album = track.album_info();
+    let duration =
+        format_duration_hms(&chrono::Duration::from_std(track.duration).unwrap_or_default());
     SearchTuiDisplayRow {
         title: format!("{} - {}", track.display_name(), track.artists_info()),
-        secondary: Some(track.album_info()),
+        secondary: Some(if album.is_empty() {
+            duration
+        } else {
+            format!("{album} • {duration}")
+        }),
         kind: "song",
         is_current: false,
         playlist_title_bold: false,
@@ -727,7 +794,7 @@ fn context_play_time(tracks: &[Track]) -> String {
         .iter()
         .map(|track| track.duration)
         .sum::<std::time::Duration>();
-    format_duration(&chrono::Duration::from_std(duration).unwrap_or_default())
+    format_duration_hms(&chrono::Duration::from_std(duration).unwrap_or_default())
 }
 
 pub fn render_library_page(
@@ -1348,7 +1415,9 @@ pub fn render_queue_page(
     fn get_playable_duration(item: &PlayableItem) -> String {
         match item {
             PlayableItem::Track(FullTrack { ref duration, .. })
-            | PlayableItem::Episode(FullEpisode { ref duration, .. }) => format_duration(duration),
+            | PlayableItem::Episode(FullEpisode { ref duration, .. }) => {
+                format_duration_hms(duration)
+            }
             PlayableItem::Unknown(_) => String::new(),
         }
     }
@@ -1639,10 +1708,8 @@ fn render_track_table(
                 } else {
                     Cell::from("")
                 },
-                Cell::from(format!(
-                    "{}:{:02}",
-                    t.duration.as_secs() / 60,
-                    t.duration.as_secs() % 60,
+                Cell::from(format_duration_hms(
+                    &chrono::Duration::from_std(t.duration).unwrap_or_default(),
                 )),
             ])
             .style(style)
@@ -1752,10 +1819,8 @@ fn render_episode_table(
                 Cell::from(id),
                 Cell::from(to_bidi_string(&e.name)),
                 Cell::from(e.release_date.clone()),
-                Cell::from(format!(
-                    "{}:{:02}",
-                    e.duration.as_secs() / 60,
-                    e.duration.as_secs() % 60,
+                Cell::from(format_duration_hms(
+                    &chrono::Duration::from_std(e.duration).unwrap_or_default(),
                 )),
             ])
             .style(style)
