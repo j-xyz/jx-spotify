@@ -305,7 +305,7 @@ fn handle_command_for_track_table_window(
     }
 
     match command {
-        Command::PlayRandom | Command::ChooseSelected => {
+        Command::PlayRandom | Command::ChooseSelected | Command::PreviousTrack => {
             let uri = if command == Command::PlayRandom {
                 tracks[rand::rng().random_range(0..tracks.len())].id.uri()
             } else {
@@ -389,7 +389,7 @@ pub fn handle_command_for_track_list_window(
         return Ok(true);
     }
     match command {
-        Command::ChooseSelected => {
+        Command::ChooseSelected | Command::PreviousTrack => {
             // for a track list, `ChooseSelected` on a track
             // will start a `URIs` playback containing only that track.
             // This is different from the track table, which handles
@@ -605,7 +605,7 @@ pub fn handle_command_for_episode_list_window(
         return Ok(true);
     }
     match command {
-        Command::ChooseSelected => {
+        Command::ChooseSelected | Command::PreviousTrack => {
             // Episodes don't have a Tracks context, so clear it
             state.player.write().currently_playing_tracks_id = None;
 
@@ -650,7 +650,7 @@ fn handle_command_for_episode_table_window(
         return Ok(true);
     }
     match command {
-        Command::ChooseSelected => {
+        Command::ChooseSelected | Command::PreviousTrack => {
             let uri = episodes[id].id.uri();
 
             // Show context doesn't have a Tracks context, so clear it
