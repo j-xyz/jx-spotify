@@ -475,7 +475,8 @@ fn handle_key_sequence_for_shortcut_family_popup(
         .keymap_config
         .find_command_from_key_sequence(key_sequence)
     else {
-        return Ok(false);
+        ui.popup = None;
+        return super::dispatch_key_sequence(key_sequence, client_pub, state, ui);
     };
 
     let n_items = match ui.popup.as_ref() {
@@ -483,7 +484,7 @@ fn handle_key_sequence_for_shortcut_family_popup(
         _ => return Ok(false),
     };
 
-    handle_command_for_list_popup(
+    if handle_command_for_list_popup(
         command,
         ui,
         n_items,
@@ -500,7 +501,12 @@ fn handle_key_sequence_for_shortcut_family_popup(
         |ui: &mut UIStateGuard| {
             ui.popup = None;
         },
-    )
+    )? {
+        return Ok(true);
+    }
+
+    ui.popup = None;
+    super::dispatch_key_sequence(key_sequence, client_pub, state, ui)
 }
 
 fn shortcut_family_entry_from_key_sequence(
@@ -818,4 +824,159 @@ fn handle_key_sequence_for_playlist_search_popup(
     }
 
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        config::{self, Configs},
+        state::{Mutex, State},
+    };
+    use std::{
+        collections::VecDeque,
+        path::PathBuf,
+        sync::{Arc, Once},
+    };
+
+    static TEST_CONFIG: Once = Once::new();
+
+    fn init_test_config() {
+        TEST_CONFIG.call_once(|| {
+            let root =
+                std::env::temp_dir().join(format!("jx-spotify-popup-tests-{}", std::process::id()));
+            let config_dir = root.join("config");
+            let cache_dir = root.join("cache");
+
+            std::fs::create_dir_all(&config_dir).expect("create test config dir");
+            std::fs::create_dir_all(&cache_dir).expect("create test cache dir");
+
+            config::set_config(
+                Configs::new(&PathBuf::from(&config_dir), &PathBuf::from(&cache_dir))
+                    .expect("initialize test config"),
+            );
+        });
+    }
+
+    fn test_state() -> SharedState {
+        init_test_config();
+        Arc::new(State::new(false, Arc::new(Mutex::new(VecDeque::new()))))
+    }
+
+    #[test]
+    fn shortcut_family_popup_closes_on_unknown_single_key() {
+        let state = test_state();
+        let (client_pub, _client_sub) = flume::unbounded();
+        let mut ui = state.ui.lock();
+
+        assert!(open_shortcut_family_popup(
+            KeySequence {
+                keys: vec![Key::None(crossterm::event::KeyCode::Char('r'))],
+            },
+            &mut ui,
+        ));
+
+        let handled = handle_key_sequence_for_shortcut_family_popup(
+            &KeySequence {
+                keys: vec![Key::None(crossterm::event::KeyCode::Char('q'))],
+            },
+            &client_pub,
+            &state,
+            &mut ui,
+        )
+        .expect("handle unknown shortcut-family key");
+
+        assert!(!handled);
+        assert!(ui.popup.is_none());
+    }
+
+    #[test]
+    fn shortcut_family_popup_falls_through_incomplete_prefix() {
+        let state = test_state();
+        let (client_pub, _client_sub) = flume::unbounded();
+        let mut ui = state.ui.lock();
+
+        assert!(open_shortcut_family_popup(
+            KeySequence {
+                keys: vec![Key::None(crossterm::event::KeyCode::Char('g'))],
+            },
+            &mut ui,
+        ));
+
+        let handled = handle_key_sequence_for_shortcut_family_popup(
+            &KeySequence {
+                keys: vec![Key::None(crossterm::event::KeyCode::Char('m'))],
+            },
+            &client_pub,
+            &state,
+            &mut ui,
+        )
+        .expect("handle incomplete prefix after shortcut popup");
+
+        assert!(!handled);
+        assert!(ui.popup.is_none());
+    }
+
+    #[test]
+    fn shortcut_family_popup_dispatches_global_single_key_command() {
+        let state = test_state();
+        let (client_pub, client_sub) = flume::unbounded();
+        let mut ui = state.ui.lock();
+
+        assert!(open_shortcut_family_popup(
+            KeySequence {
+                keys: vec![Key::None(crossterm::event::KeyCode::Char('g'))],
+            },
+            &mut ui,
+        ));
+
+        let handled = handle_key_sequence_for_shortcut_family_popup(
+            &KeySequence {
+                keys: vec![Key::None(crossterm::event::KeyCode::Char(' '))],
+            },
+            &client_pub,
+            &state,
+            &mut ui,
+        )
+        .expect("handle global single-key command after shortcut popup");
+
+        assert!(handled);
+        assert!(ui.popup.is_none());
+        assert!(matches!(
+            client_sub.try_recv().expect("resume/pause request"),
+            ClientRequest::Player(PlayerRequest::ResumePause)
+        ));
+    }
+
+    #[test]
+    fn shortcut_family_popup_dispatches_leaked_full_sequence() {
+        let state = test_state();
+        let (client_pub, _client_sub) = flume::unbounded();
+        let mut ui = state.ui.lock();
+        let history_len = ui.history.len();
+
+        assert!(open_shortcut_family_popup(
+            KeySequence {
+                keys: vec![Key::None(crossterm::event::KeyCode::Char('g'))],
+            },
+            &mut ui,
+        ));
+
+        let handled = handle_key_sequence_for_shortcut_family_popup(
+            &KeySequence {
+                keys: vec![
+                    Key::None(crossterm::event::KeyCode::Char('g')),
+                    Key::None(crossterm::event::KeyCode::Char('l')),
+                ],
+            },
+            &client_pub,
+            &state,
+            &mut ui,
+        )
+        .expect("handle leaked full shortcut-family sequence");
+
+        assert!(handled);
+        assert!(ui.popup.is_none());
+        assert_eq!(ui.history.len(), history_len + 1);
+    }
 }

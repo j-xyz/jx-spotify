@@ -651,6 +651,7 @@ mod tests {
                 saved_albums: Vec::new(),
                 saved_tracks: HashMap::new(),
                 recent_track_seeds: Vec::new(),
+                last_radio_tracks_id: None,
             },
             caches: MemoryCaches::new(),
             browse: BrowseData::default(),

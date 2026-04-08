@@ -2,8 +2,9 @@
 
 - The help-splitting direction has been reviewed and scoped.
 - Current recommendation: keep the global command help page, then add smaller contextual surfaces starting with SearchTui.
+- Radio shortcut-family hardening: the popup now behaves as a self-contained modal, closes on unknown single-key input instead of leaking stale prefixes into the global key buffer, and will still dispatch a leaked full sequence like `g l` or `r s` if one reaches it. This is aimed at the recent “radio menu freeze” report.
 - Implemented slices: the app now carries a persistent four-corner shortcut frame, `?` routes to the global help page, playback metadata is more compact, track-bearing surfaces now share a split-row visual language with primary title/artist content on the left and lighter metadata on the right, and the shortcut-family popup titles now cover `s` and `u`.
-- Last verification: `cargo check --manifest-path /Users/jane/jxyz/maeve/projects/jx-spotify/spotify_player/Cargo.toml` passed after adding worksuite handoff plumbing.
+- Last verification: `cargo test --manifest-path /Users/jane/jxyz/maeve/projects/jx-spotify/spotify_player/Cargo.toml shortcut_family_popup -- --nocapture` and `cargo check --manifest-path /Users/jane/jxyz/maeve/projects/jx-spotify/spotify_player/Cargo.toml` passed after the shortcut-family popup hardening.
 - Next slice: visual validation in the live TUI and any follow-up spacing or accent cleanup that falls out of that pass.
 - Recent related commit: `eb552eb` (`fix: move spotify badge to global header`).
 - New restyle slice: compact now-playing footer, shorter playback window, album/radio table cleanup, global help family promotion, mouse-volume cleanup, and a footer mini-help preview on `?`.
