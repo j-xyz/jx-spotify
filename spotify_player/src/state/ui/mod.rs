@@ -1,8 +1,9 @@
 use crate::{
     config::{self, Theme},
     key,
+    state::Track,
     ui::{self, Orientation},
-    utils::filtered_items_from_query,
+    utils::{filtered_items_from_query, filtered_tracks_from_query},
 };
 use std::time::Instant;
 
@@ -126,6 +127,15 @@ impl UIState {
     pub fn search_filtered_items<'a, T: std::fmt::Display>(&self, items: &'a [T]) -> Vec<&'a T> {
         match self.popup {
             Some(PopupState::Search { ref query }) => filtered_items_from_query(query, items),
+            _ => items.iter().collect::<Vec<_>>(),
+        }
+    }
+
+    /// Get a list of tracks possibly filtered by a search query, with sigil-aware
+    /// field filtering for track-bearing surfaces.
+    pub fn search_filtered_tracks<'a>(&self, items: &'a [Track]) -> Vec<&'a Track> {
+        match self.popup {
+            Some(PopupState::Search { ref query }) => filtered_tracks_from_query(query, items),
             _ => items.iter().collect::<Vec<_>>(),
         }
     }

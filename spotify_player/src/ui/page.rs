@@ -3,7 +3,6 @@ use std::{
     fmt::Display,
 };
 
-use chrono_humanize::HumanTime;
 use ratatui::text::Line;
 
 use crate::{
@@ -25,6 +24,8 @@ use crate::ui::utils::to_bidi_string;
 
 const COMMAND_TABLE_CONSTRAINTS: [Constraint; 2] =
     [Constraint::Percentage(28), Constraint::Percentage(72)];
+const SPLIT_ROW_MIN_RIGHT_WIDTH: u16 = 12;
+const SPLIT_ROW_MAX_RIGHT_WIDTH: u16 = 36;
 
 #[derive(Clone)]
 pub(crate) struct HelpRow {
@@ -40,6 +41,51 @@ impl Display for HelpRow {
             "{} {} {}",
             self.section, self.shortcuts, self.description
         )
+    }
+}
+
+fn split_row_right_width(values: &[String], rect: Rect) -> u16 {
+    let max_allowed = rect.width.saturating_sub(10).min(SPLIT_ROW_MAX_RIGHT_WIDTH);
+    if max_allowed == 0 {
+        return 0;
+    }
+
+    let min_allowed = SPLIT_ROW_MIN_RIGHT_WIDTH.min(max_allowed);
+    let max_content = values
+        .iter()
+        .map(|value| value.chars().count() as u16)
+        .max()
+        .unwrap_or(min_allowed);
+    max_content.clamp(min_allowed, max_allowed)
+}
+
+fn track_left_line(track: &Track, ui: &UIStateGuard, is_current: bool) -> Line<'static> {
+    let main_style = if is_current {
+        ui.theme.current_playing()
+    } else {
+        Style::default()
+    };
+    let secondary_style = if is_current {
+        ui.theme.current_playing()
+    } else {
+        ui.theme.playlist_desc()
+    };
+
+    Line::from(vec![
+        Span::styled(to_bidi_string(&track.display_name()), main_style),
+        Span::styled(" - ", secondary_style),
+        Span::styled(to_bidi_string(&track.artists_info()), secondary_style),
+    ])
+}
+
+fn track_right_meta(track: &Track, include_album: bool) -> String {
+    let duration =
+        format_duration_hms(&chrono::Duration::from_std(track.duration).unwrap_or_default());
+    let album = track.album_info();
+    if include_album && !album.is_empty() {
+        format!("{} {}", to_bidi_string(&album), duration)
+    } else {
+        duration
     }
 }
 
@@ -61,32 +107,6 @@ pub fn render_search_page(
         items
             .iter()
             .map(|i| (to_bidi_string(&i.to_string()), false))
-            .collect()
-    }
-
-    fn search_track_items(items: &[Track]) -> Vec<(String, bool)> {
-        items
-            .iter()
-            .map(|track| {
-                let duration = format_duration_hms(
-                    &chrono::Duration::from_std(track.duration).unwrap_or_default(),
-                );
-                let album = track.album_info();
-                let details = if album.is_empty() {
-                    duration
-                } else {
-                    format!("{album} • {duration}")
-                };
-                (
-                    to_bidi_string(&format!(
-                        "{} • {} ▎ {}",
-                        track.display_name(),
-                        track.artists_info(),
-                        details
-                    )),
-                    false,
-                )
-            })
             .collect()
     }
 
@@ -156,15 +176,8 @@ pub fn render_search_page(
     };
 
     // 3. Construct the page's widgets
-    let (track_list, n_tracks) = {
-        let track_items = search_results
-            .map(|s| search_track_items(&s.tracks))
-            .unwrap_or_default();
-
-        let is_active = is_active && focus_state == SearchFocusState::Tracks;
-
-        utils::construct_list_widget(&ui.theme, track_items, is_active)
-    };
+    let search_tracks = search_results.map(|s| &s.tracks[..]).unwrap_or(&[]);
+    let n_tracks = search_tracks.len();
 
     let (album_list, n_albums) = {
         let album_items = search_results
@@ -282,6 +295,48 @@ pub fn render_search_page(
         search_input_rect,
     );
 
+    let track_right_meta = search_tracks
+        .iter()
+        .map(|track| track_right_meta(track, true))
+        .collect::<Vec<_>>();
+    let track_right_width = split_row_right_width(&track_right_meta, track_rect);
+    let track_rows = search_tracks
+        .iter()
+        .zip(track_right_meta)
+        .map(|(track, right_meta)| {
+            let is_current = false;
+            Row::new(vec![
+                if data.user_data.is_liked_track(track) {
+                    Cell::from(&config::get_config().app_config.liked_icon as &str)
+                        .style(ui.theme.like())
+                } else {
+                    Cell::from("")
+                },
+                Cell::from(track_left_line(track, ui, is_current)),
+                Cell::from(right_meta).style(ui.theme.playlist_desc()),
+            ])
+            .style(Style::default())
+        })
+        .collect::<Vec<_>>();
+    let track_table = Table::new(
+        track_rows,
+        [
+            Constraint::Length(config::get_config().app_config.liked_icon.chars().count() as u16),
+            Constraint::Fill(1),
+            Constraint::Length(track_right_width),
+        ],
+    )
+    .column_spacing(1)
+    .highlight_symbol(utils::highlight_symbol(
+        &ui.theme,
+        is_active && focus_state == SearchFocusState::Tracks,
+    ))
+    .row_highlight_style(if is_active && focus_state == SearchFocusState::Tracks {
+        ui.theme.selection(true)
+    } else {
+        Style::default()
+    });
+
     // Render the search result windows.
     // Need mutable access to the list/table states stored inside the page state for rendering.
     let PageState::Search {
@@ -290,9 +345,9 @@ pub fn render_search_page(
     else {
         return;
     };
-    utils::render_list_window(
+    utils::render_table_window_from_list_state(
         frame,
-        track_list,
+        track_table,
         track_rect,
         n_tracks,
         &mut page_state.track_list,
@@ -401,7 +456,7 @@ pub fn render_search_tui_page(
     render_search_tui_results(frame, chunks[1], items, is_active, focus, ui);
 
     if search_visible {
-        render_search_tui_search_header(frame, chunks[2], focus, ui);
+        render_search_tui_search_header(frame, chunks[2], &mode, focus, ui);
 
         let search_box_style = ui.theme.playback_progress_bar_unfilled();
         frame.render_widget(Block::default().style(search_box_style), chunks[3]);
@@ -450,6 +505,7 @@ fn render_search_tui_label(
 fn render_search_tui_search_header(
     frame: &mut Frame,
     rect: Rect,
+    mode: &SearchTuiMode,
     focus: SearchTuiFocus,
     ui: &UIStateGuard,
 ) {
@@ -457,10 +513,19 @@ fn render_search_tui_search_header(
         frame,
         rect,
         "Search",
-        None,
+        Some(search_tui_sigil_meta_line(mode)),
         focus == SearchTuiFocus::Search,
         ui,
     );
+}
+
+fn search_tui_sigil_meta_line(mode: &SearchTuiMode) -> Line<'static> {
+    match mode {
+        SearchTuiMode::Global => Line::from("! track  @ artist  $ album  # playlist"),
+        SearchTuiMode::Playlist { .. }
+        | SearchTuiMode::Album { .. }
+        | SearchTuiMode::Artist { .. } => Line::from("! title  @ artist  $ album"),
+    }
 }
 
 fn render_search_tui_results(
@@ -473,6 +538,11 @@ fn render_search_tui_results(
 ) {
     frame.render_widget(Block::default().style(ui.theme.app()), rect);
 
+    let right_meta_values = items
+        .iter()
+        .map(|row| row.right_meta.clone())
+        .collect::<Vec<_>>();
+    let right_width = split_row_right_width(&right_meta_values, rect);
     let rows = items
         .into_iter()
         .map(|row| {
@@ -486,23 +556,16 @@ fn render_search_tui_results(
             } else {
                 main_style
             };
-            let mut left = vec![Span::styled(to_bidi_string(&row.title), title_style)];
-            if let Some(secondary) = row.secondary {
-                left.push(Span::raw(" | "));
-                left.push(Span::styled(
-                    to_bidi_string(&secondary),
-                    ui.theme.playlist_desc(),
-                ));
-            }
+            let left = vec![Span::styled(to_bidi_string(&row.title), title_style)];
             Row::new(vec![
                 Cell::from(Line::from(left)),
-                Cell::from(format!("{:>10}", row.kind))
+                Cell::from(row.right_meta)
                     .style(ui.theme.playlist_desc().add_modifier(Modifier::ITALIC)),
             ])
         })
         .collect::<Vec<_>>();
     let len = rows.len();
-    let table = Table::new(rows, [Constraint::Fill(1), Constraint::Length(12)])
+    let table = Table::new(rows, [Constraint::Fill(1), Constraint::Length(right_width)])
         .column_spacing(1)
         .highlight_symbol(utils::highlight_symbol(
             &ui.theme,
@@ -529,8 +592,7 @@ fn render_search_tui_results(
 #[derive(Debug)]
 struct SearchTuiDisplayRow {
     title: String,
-    secondary: Option<String>,
-    kind: &'static str,
+    right_meta: String,
     is_current: bool,
     playlist_title_bold: bool,
 }
@@ -545,20 +607,18 @@ impl From<search_tui::SearchTuiItem> for SearchTuiDisplayRow {
                 );
                 Self {
                     title: format!("{} - {}", track.display_name(), track.artists_info()),
-                    secondary: Some(if album.is_empty() {
+                    right_meta: if album.is_empty() {
                         duration
                     } else {
-                        format!("{album} • {duration}")
-                    }),
-                    kind: "song",
+                        format!("{} {}", to_bidi_string(&album), duration)
+                    },
                     is_current: false,
                     playlist_title_bold: false,
                 }
             }
             search_tui::SearchTuiItem::Artist { artist } => Self {
                 title: artist.name,
-                secondary: None,
-                kind: "artist",
+                right_meta: "artist".to_string(),
                 is_current: false,
                 playlist_title_bold: false,
             },
@@ -573,15 +633,13 @@ impl From<search_tui::SearchTuiItem> for SearchTuiDisplayRow {
                         .collect::<Vec<_>>()
                         .join(", ")
                 ),
-                secondary: Some(album.year()),
-                kind: "album",
+                right_meta: format!("album {}", album.year()),
                 is_current: false,
                 playlist_title_bold: false,
             },
             search_tui::SearchTuiItem::Playlist { playlist } => Self {
                 title: playlist.name,
-                secondary: Some(playlist.owner.0),
-                kind: "playlist",
+                right_meta: format!("playlist {}", playlist.owner.0),
                 is_current: false,
                 playlist_title_bold: true,
             },
@@ -595,12 +653,11 @@ fn search_tui_playlist_row(track: Track) -> SearchTuiDisplayRow {
         format_duration_hms(&chrono::Duration::from_std(track.duration).unwrap_or_default());
     SearchTuiDisplayRow {
         title: format!("{} - {}", track.display_name(), track.artists_info()),
-        secondary: Some(if album.is_empty() {
+        right_meta: if album.is_empty() {
             duration
         } else {
-            format!("{album} • {duration}")
-        }),
-        kind: "song",
+            format!("{} {}", to_bidi_string(&album), duration)
+        },
         is_current: false,
         playlist_title_bold: false,
     }
@@ -680,7 +737,7 @@ pub fn render_context_page(
                     rect,
                     is_active,
                     state,
-                    ui.search_filtered_items(tracks),
+                    ui.search_filtered_tracks(tracks),
                     ui,
                     &data,
                 );
@@ -691,7 +748,7 @@ pub fn render_context_page(
                     rect,
                     is_active,
                     state,
-                    ui.search_filtered_items(tracks),
+                    ui.search_filtered_tracks(tracks),
                     ui,
                     &data,
                 );
@@ -1512,6 +1569,13 @@ pub fn render_queue_page(
             PlayableItem::Unknown(_) => String::new(),
         }
     }
+    fn get_playable_album(item: &PlayableItem) -> String {
+        match item {
+            PlayableItem::Track(FullTrack { album, .. }) => album.name.clone(),
+            PlayableItem::Episode(FullEpisode { show, .. }) => show.name.clone(),
+            PlayableItem::Unknown(_) => String::new(),
+        }
+    }
 
     // 1. Get data
     let player = state.player.read();
@@ -1549,17 +1613,37 @@ pub fn render_queue_page(
     };
 
     // 3. Construct the page's widget
+    let queue_items = queue.iter().skip(scroll_offset).collect::<Vec<_>>();
+    let queue_right_meta = queue_items
+        .iter()
+        .map(|item| {
+            let album = get_playable_album(item);
+            let duration = get_playable_duration(item);
+            if album.is_empty() {
+                duration
+            } else {
+                format!("{} {}", to_bidi_string(&album), duration)
+            }
+        })
+        .collect::<Vec<_>>();
+    let queue_right_width = split_row_right_width(&queue_right_meta, rect);
     let queue_table = Table::new(
-        queue
-            .iter()
+        queue_items
+            .into_iter()
+            .zip(queue_right_meta)
             .enumerate()
-            .skip(scroll_offset)
-            .map(|(i, x)| {
+            .map(|(i, (item, right_meta))| {
+                let left = Line::from(vec![
+                    Span::raw(to_bidi_string(&get_playable_name(item))),
+                    Span::styled(" - ", ui.theme.playlist_desc()),
+                    Span::styled(
+                        to_bidi_string(&get_playable_artists(item)),
+                        ui.theme.playlist_desc(),
+                    ),
+                ]);
                 Row::new(vec![
-                    Cell::from(format!("{}", i + 1)),
-                    Cell::from(get_playable_name(x)),
-                    Cell::from(get_playable_artists(x)),
-                    Cell::from(get_playable_duration(x)),
+                    Cell::from(left),
+                    Cell::from(right_meta).style(ui.theme.playlist_desc()),
                 ])
                 .style(if (i + scroll_offset) % 2 == 0 {
                     ui.theme.secondary_row()
@@ -1568,22 +1652,9 @@ pub fn render_queue_page(
                 })
             })
             .collect::<Vec<_>>(),
-        [
-            Constraint::Percentage(5),
-            Constraint::Percentage(40),
-            Constraint::Percentage(35),
-            Constraint::Percentage(20),
-        ],
+        [Constraint::Fill(1), Constraint::Length(queue_right_width)],
     )
-    .header(
-        Row::new(vec![
-            Cell::from("#"),
-            Cell::from("Title"),
-            Cell::from("Artists"),
-            Cell::from("Duration"),
-        ])
-        .style(ui.theme.table_header()),
-    );
+    .column_spacing(1);
 
     // 4. Render page's widget
     frame.render_widget(queue_table, rect);
@@ -1604,7 +1675,7 @@ fn render_artist_context_page_windows(
 ) {
     // 1. Get data
     let (tracks, albums, artists) = (
-        ui.search_filtered_items(artist_data.0),
+        ui.search_filtered_tracks(artist_data.0),
         ui.search_filtered_items(artist_data.1),
         ui.search_filtered_items(artist_data.2),
     );
@@ -1757,7 +1828,6 @@ fn render_track_table(
 
     // get the current playing track's URI to decorate such track (if exists) in the track table
     let mut playing_track_uri = String::new();
-    let mut playing_id = "";
     if let Some(ref playback) = state.player.read().playback {
         if let Some(rspotify::model::PlayableItem::Track(ref track)) = playback.item {
             playing_track_uri = track
@@ -1765,260 +1835,54 @@ fn render_track_table(
                 .as_ref()
                 .map(rspotify::prelude::Id::uri)
                 .unwrap_or_default();
-
-            playing_id = if playback.is_playing {
-                &configs.app_config.play_icon
-            } else {
-                &configs.app_config.pause_icon
-            };
         }
     }
 
-    // enable Added column if any track in the table has added_at field specified
-    let added_at_enabled = tracks.iter().any(|t| t.added_at > 0);
-
-    let n_tracks = tracks.len();
-    let n_play_pause_chars = std::cmp::max(
-        configs.app_config.play_icon.chars().count(),
-        configs.app_config.pause_icon.chars().count(),
-    ) as u16;
-    let n_track_digits = if n_tracks > 0 {
-        (n_tracks.ilog10() + 1) as u16
-    } else {
-        1
-    };
-    let (track_table, len) = match track_table_style {
-        TrackTableStyle::Radio => {
-            let rows = tracks
-                .into_iter()
-                .map(|t| {
-                    let duration = format_duration_hms(
-                        &chrono::Duration::from_std(t.duration).unwrap_or_default(),
-                    );
-                    let title = format!("{} - {}", t.display_name(), t.artists_info());
-                    let mut left = vec![Span::styled(to_bidi_string(&title), Style::default())];
-                    let secondary = if t.album_info().is_empty() {
-                        duration.clone()
-                    } else {
-                        format!("{} • {}", t.album_info(), duration)
-                    };
-                    if !secondary.is_empty() {
-                        left.push(Span::raw(" | "));
-                        left.push(Span::styled(
-                            to_bidi_string(&secondary),
-                            ui.theme.playlist_desc(),
-                        ));
-                    }
-                    let row_style = if playing_track_uri == t.id.uri() {
-                        ui.theme.current_playing()
-                    } else {
-                        Style::default()
-                    };
-
-                    Row::new(vec![
-                        if data.user_data.is_liked_track(t) {
-                            Cell::from(&configs.app_config.liked_icon as &str)
-                                .style(ui.theme.like())
-                        } else {
-                            Cell::from("")
-                        },
-                        Cell::from(Line::from(left)),
-                        Cell::from(duration).style(ui.theme.playlist_desc()),
-                    ])
-                    .style(row_style)
-                })
-                .collect::<Vec<_>>();
-            let len = rows.len();
-
-            let table = Table::new(
-                rows,
-                [
-                    Constraint::Length(configs.app_config.liked_icon.chars().count() as u16),
-                    Constraint::Fill(1),
-                    Constraint::Length(8),
-                ],
-            )
-            .header(
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from("Title"),
-                    Cell::from("Duration"),
-                ])
-                .style(ui.theme.table_header()),
-            )
-            .column_spacing(2)
-            .highlight_symbol(utils::highlight_symbol(&ui.theme, is_active))
-            .row_highlight_style(ui.theme.selection(is_active));
-
-            (table, len)
-        }
-        TrackTableStyle::Album => {
-            let rows = tracks
-                .into_iter()
-                .enumerate()
-                .map(|(id, t)| {
-                    let track_no = (id + 1).to_string();
-                    let (play_pause, style) = if playing_track_uri == t.id.uri() {
-                        (playing_id.to_string(), ui.theme.current_playing())
-                    } else {
-                        (String::new(), Style::default())
-                    };
-                    let mut cells = vec![
-                        if data.user_data.is_liked_track(t) {
-                            Cell::from(&configs.app_config.liked_icon as &str)
-                                .style(ui.theme.like())
-                        } else {
-                            Cell::from("")
-                        },
-                        Cell::from(Text::from(track_no).alignment(Alignment::Right)),
-                        Cell::from(play_pause),
-                        Cell::from(to_bidi_string(&t.display_name())),
-                        Cell::from(to_bidi_string(&t.artists_info())),
-                    ];
-                    if added_at_enabled {
-                        let time = chrono::DateTime::from_timestamp_nanos(
-                            t.added_at as i64 * 1_000_000_000,
-                        );
-                        cells.push(Cell::from(
-                            if chrono::Utc::now() > time + chrono::Duration::days(30) {
-                                time.format("%b %d, %Y").to_string()
-                            } else {
-                                HumanTime::from(time).to_string()
-                            },
-                        ));
-                    }
-                    cells.push(Cell::from(format_duration_hms(
-                        &chrono::Duration::from_std(t.duration).unwrap_or_default(),
-                    )));
-
-                    Row::new(cells).style(style)
-                })
-                .collect::<Vec<_>>();
-            let len = rows.len();
-
-            let table = Table::new(
-                rows,
-                [
-                    Constraint::Length(configs.app_config.liked_icon.chars().count() as u16),
-                    Constraint::Length(n_track_digits),
-                    Constraint::Length(n_play_pause_chars),
-                    Constraint::Fill(5),
-                    Constraint::Fill(3),
-                    if added_at_enabled {
-                        Constraint::Fill(2)
-                    } else {
-                        Constraint::Fill(0)
-                    },
-                    Constraint::Fill(1),
-                ],
-            )
-            .header(
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Text::from("#").alignment(Alignment::Right)),
-                    Cell::from(""),
-                    Cell::from("Title"),
-                    Cell::from("Artists"),
-                    if added_at_enabled {
-                        Cell::from("Added")
-                    } else {
-                        Cell::from("")
-                    },
-                    Cell::from("Duration"),
-                ])
-                .style(ui.theme.table_header()),
-            )
-            .column_spacing(2)
-            .highlight_symbol(utils::highlight_symbol(&ui.theme, is_active))
-            .row_highlight_style(ui.theme.selection(is_active));
-
-            (table, len)
-        }
-        TrackTableStyle::Detailed => {
-            let rows = tracks
-                .into_iter()
-                .enumerate()
-                .map(|(id, t)| {
-                    let track_no = (id + 1).to_string();
-                    let (play_pause, style) = if playing_track_uri == t.id.uri() {
-                        (playing_id.to_string(), ui.theme.current_playing())
-                    } else {
-                        (String::new(), Style::default())
-                    };
-                    Row::new(vec![
-                        if data.user_data.is_liked_track(t) {
-                            Cell::from(&configs.app_config.liked_icon as &str)
-                                .style(ui.theme.like())
-                        } else {
-                            Cell::from("")
-                        },
-                        Cell::from(Text::from(track_no).alignment(Alignment::Right)),
-                        Cell::from(play_pause),
-                        Cell::from(to_bidi_string(&t.display_name())),
-                        Cell::from(to_bidi_string(&t.artists_info())),
-                        Cell::from(to_bidi_string(&t.album_info())),
-                        if added_at_enabled {
-                            let time = chrono::DateTime::from_timestamp_nanos(
-                                t.added_at as i64 * 1_000_000_000,
-                            );
-                            Cell::from(if chrono::Utc::now() > time + chrono::Duration::days(30) {
-                                time.format("%b %d, %Y").to_string()
-                            } else {
-                                HumanTime::from(time).to_string()
-                            })
-                        } else {
-                            Cell::from("")
-                        },
-                        Cell::from(format_duration_hms(
-                            &chrono::Duration::from_std(t.duration).unwrap_or_default(),
-                        )),
-                    ])
-                    .style(style)
-                })
-                .collect::<Vec<_>>();
-            let len = rows.len();
-
-            let table = Table::new(
-                rows,
-                [
-                    Constraint::Length(configs.app_config.liked_icon.chars().count() as u16),
-                    Constraint::Length(n_track_digits),
-                    Constraint::Length(n_play_pause_chars),
-                    Constraint::Fill(4),
-                    Constraint::Fill(3),
-                    Constraint::Fill(5),
-                    if added_at_enabled {
-                        Constraint::Fill(2)
-                    } else {
-                        Constraint::Fill(0)
-                    },
-                    Constraint::Fill(1),
-                ],
-            )
-            .header(
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Text::from("#").alignment(Alignment::Right)),
-                    Cell::from(""),
-                    Cell::from("Title"),
-                    Cell::from("Artists"),
-                    Cell::from("Album"),
-                    if added_at_enabled {
-                        Cell::from("Added")
-                    } else {
-                        Cell::from("")
-                    },
-                    Cell::from("Duration"),
-                ])
-                .style(ui.theme.table_header()),
-            )
-            .column_spacing(2)
-            .highlight_symbol(utils::highlight_symbol(&ui.theme, is_active))
-            .row_highlight_style(ui.theme.selection(is_active));
-
-            (table, len)
-        }
-    };
+    let include_album_meta = !matches!(track_table_style, TrackTableStyle::Album);
+    let right_meta = tracks
+        .iter()
+        .map(|track| track_right_meta(track, include_album_meta))
+        .collect::<Vec<_>>();
+    let right_width = split_row_right_width(&right_meta, rect);
+    let rows = tracks
+        .into_iter()
+        .zip(right_meta)
+        .map(|(track, right_meta)| {
+            let is_current = playing_track_uri == track.id.uri();
+            let row_style = if is_current {
+                ui.theme.current_playing()
+            } else {
+                Style::default()
+            };
+            let right_style = if is_current {
+                ui.theme.current_playing()
+            } else {
+                ui.theme.playlist_desc()
+            };
+            Row::new(vec![
+                if data.user_data.is_liked_track(track) {
+                    Cell::from(&configs.app_config.liked_icon as &str).style(ui.theme.like())
+                } else {
+                    Cell::from("")
+                },
+                Cell::from(track_left_line(track, ui, is_current)),
+                Cell::from(right_meta).style(right_style),
+            ])
+            .style(row_style)
+        })
+        .collect::<Vec<_>>();
+    let len = rows.len();
+    let track_table = Table::new(
+        rows,
+        [
+            Constraint::Length(configs.app_config.liked_icon.chars().count() as u16),
+            Constraint::Fill(1),
+            Constraint::Length(right_width),
+        ],
+    )
+    .column_spacing(1)
+    .highlight_symbol(utils::highlight_symbol(&ui.theme, is_active))
+    .row_highlight_style(ui.theme.selection(is_active));
 
     if let PageState::Context {
         state: Some(state), ..

@@ -2,7 +2,7 @@
 
 - The help-splitting direction has been reviewed and scoped.
 - Current recommendation: keep the global command help page, then add smaller contextual surfaces starting with SearchTui.
-- Implemented slices: the app now carries a persistent four-corner shortcut frame, `?` routes to the global help page, playback metadata is more compact, album views drop redundant album columns, radio views use a lighter search-tui-like table, and the shortcut-family popup titles now cover `s` and `u`.
+- Implemented slices: the app now carries a persistent four-corner shortcut frame, `?` routes to the global help page, playback metadata is more compact, track-bearing surfaces now share a split-row visual language with primary title/artist content on the left and lighter metadata on the right, and the shortcut-family popup titles now cover `s` and `u`.
 - Last verification: `cargo check --manifest-path /Users/jane/jxyz/maeve/projects/jx-spotify/spotify_player/Cargo.toml` passed after adding worksuite handoff plumbing.
 - Next slice: visual validation in the live TUI and any follow-up spacing or accent cleanup that falls out of that pass.
 - Recent related commit: `eb552eb` (`fix: move spotify badge to global header`).
@@ -11,5 +11,15 @@
 - Footer layout update: the preview row and now-playing row now have separate footer lines, so they no longer fight for the same space.
 - Worksuite handoff slice: `g x g` now maps to `GoExternalGlow`, emits a scoped JSON handoff envelope in the app cache, passes its path via `JX_GLOW_HANDOFF_FILE` for binary-compatibility, and exits spotify foreground on successful launch so terminal ownership is handed off cleanly; the shortcut-family popup supports nested families so multi-key paths like `g x g` are discoverable.
 - Handoff teardown hardening: `GoExternalGlow` now queues a pending external launch in UI state and executes it only after raw mode is disabled and the alternate screen is left, preventing stacked-TUI/raw-mode race conditions during `jx-spotify` -> `jx-glow` transitions.
+- Handoff process exchange hardening: on Unix, the post-teardown external launch now uses `exec` instead of `spawn+exit`, so `jx-spotify` is replaced in-place by `jx-glow` and foreground TTY ownership remains stable during handoff.
+- Workspace ecosystem defaults: when `external_glow_command` is unset, `g x g` now prefers workspace-specific glow binaries (`/Users/jane/go/bin/jx-glow`, then `/Users/jane/jxyz/maeve/projects/jx-glow/jx-glow`) before generic PATH lookup for more deterministic cross-project handoff behavior.
+- Last verification: `cargo check --manifest-path /Users/jane/jxyz/maeve/projects/jx-spotify/spotify_player/Cargo.toml` passed after wiring workspace durable handoff defaults.
 - Device preference tweak: `default_device` now wins over the currently active device when choosing a startup/auto-connect target, which should make home speaker handoff more predictable when headphones are also present.
 - Radio resume slice: the last radio seed is now cached and loaded on startup so the current-playing page can reopen the last radio station after relaunch when Spotify no longer reports a live playback context.
+- Split-row cleanup: search tracks, Search TUI results, queue rows, and context track lists now use the same full-width split layout, with the liked marker in a small leading slot, title/artist on the left, and lighter metadata aligned right.
+- Last verification: `cargo check --manifest-path /Users/jane/jxyz/maeve/projects/jx-spotify/spotify_player/Cargo.toml` passed after applying the shared split-row layout rule across track-bearing list views.
+- Playback start hardening: when a `StartPlayback` request is issued without an already-active playback device, the client now resolves the preferred available device first and targets playback there instead of relying on a preexisting active device.
+- New planning note: `docs/planning/sigil-entity-grammar-proposal-2026-04.md` captures a staged proposal to promote `@/$/!/#` from Search TUI sigils into a shared navigation, search, and in-list filtering grammar.
+- Sigil grammar decision: the proposal is now accepted in principle, with `g !` and `g #` intentionally deferred until usage reveals clearer semantics.
+- First sigil slice shipped: Search TUI now shows inline sigil hints, and popup search on track-bearing context lists now supports sigil-aware field filtering (`!` title, `@` artist, `$` album) instead of plain whole-row fuzzy matching only.
+- Last verification: `cargo check --manifest-path /Users/jane/jxyz/maeve/projects/jx-spotify/spotify_player/Cargo.toml` passed after adding sigil-aware track filtering and Search TUI sigil hints.

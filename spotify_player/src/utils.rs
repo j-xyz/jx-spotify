@@ -5,6 +5,8 @@ use std::{
     path::Path,
 };
 
+use crate::state::Track;
+
 /// formats a time duration into a "{minutes}:{seconds}" format
 pub fn format_duration(duration: &chrono::Duration) -> String {
     let secs = duration.num_seconds();
@@ -173,4 +175,205 @@ pub fn filtered_items_from_query<'a, T: std::fmt::Display>(
             }
         })
         .collect::<Vec<_>>()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TrackFilterSection {
+    General,
+    Title,
+    Artist,
+    Album,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct TrackFieldQuery {
+    general_terms: Vec<String>,
+    title_terms: Vec<String>,
+    artist_terms: Vec<String>,
+    album_terms: Vec<String>,
+    has_field_markers: bool,
+}
+
+impl TrackFieldQuery {
+    fn parse(raw: &str) -> Self {
+        let mut query = Self::default();
+        let mut section = TrackFilterSection::General;
+        let mut buffer = String::new();
+
+        for token in raw.split_whitespace() {
+            if let Some((next_section, rest)) = parse_track_filter_token(token) {
+                query.push_fragment(section, &buffer);
+                query.has_field_markers = true;
+                section = next_section;
+                buffer.clear();
+                if !rest.is_empty() {
+                    buffer.push_str(rest);
+                }
+            } else {
+                if !buffer.is_empty() {
+                    buffer.push(' ');
+                }
+                buffer.push_str(token);
+            }
+        }
+
+        query.push_fragment(section, &buffer);
+        query
+    }
+
+    fn push_fragment(&mut self, section: TrackFilterSection, fragment: &str) {
+        let Some(fragment) = normalize_query_fragment(fragment) else {
+            return;
+        };
+
+        let target = match section {
+            TrackFilterSection::General => &mut self.general_terms,
+            TrackFilterSection::Title => &mut self.title_terms,
+            TrackFilterSection::Artist => &mut self.artist_terms,
+            TrackFilterSection::Album => &mut self.album_terms,
+        };
+
+        if !target.contains(&fragment) {
+            target.push(fragment);
+        }
+    }
+
+    fn matches_track(&self, track: &Track) -> bool {
+        matches_query_terms(&track.to_string(), &self.general_terms)
+            && matches_query_terms(track.display_name().as_ref(), &self.title_terms)
+            && matches_query_terms(&track.artists_info(), &self.artist_terms)
+            && matches_query_terms(&track.album_info(), &self.album_terms)
+    }
+}
+
+fn parse_track_filter_token(token: &str) -> Option<(TrackFilterSection, &str)> {
+    let (prefix, rest) = token.split_at(1);
+    match prefix {
+        "!" => Some((TrackFilterSection::Title, rest)),
+        "@" => Some((TrackFilterSection::Artist, rest)),
+        "$" => Some((TrackFilterSection::Album, rest)),
+        _ => None,
+    }
+}
+
+fn normalize_query_fragment(fragment: &str) -> Option<String> {
+    let fragment = fragment.trim();
+    if fragment.is_empty() {
+        return None;
+    }
+
+    let fragment = fragment
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .unwrap_or(fragment)
+        .trim();
+    if fragment.is_empty() {
+        None
+    } else {
+        Some(fragment.to_lowercase())
+    }
+}
+
+fn matches_query_terms(text: &str, terms: &[String]) -> bool {
+    if terms.is_empty() {
+        return true;
+    }
+
+    let lower = text.to_lowercase();
+    terms.iter().all(|term| lower.contains(term))
+}
+
+pub fn filtered_tracks_from_query<'a>(query: &str, items: &'a [Track]) -> Vec<&'a Track> {
+    let parsed = TrackFieldQuery::parse(query);
+    if !parsed.has_field_markers {
+        return filtered_items_from_query(query, items);
+    }
+
+    items
+        .iter()
+        .filter(|track| parsed.matches_track(track))
+        .collect::<Vec<_>>()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::{Album, Artist, TrackId};
+    use rspotify::model::{AlbumId, ArtistId};
+
+    fn test_artist(id: &str, name: &str) -> Artist {
+        Artist {
+            id: ArtistId::from_id(id).unwrap().into_static(),
+            name: name.to_string(),
+        }
+    }
+
+    fn test_album(id: &str, name: &str, artists: Vec<Artist>) -> Album {
+        Album {
+            id: AlbumId::from_id(id).unwrap().into_static(),
+            release_date: "2023".to_string(),
+            name: name.to_string(),
+            artists,
+            typ: None,
+            added_at: 0,
+        }
+    }
+
+    fn test_track(id: &str, name: &str, artists: Vec<Artist>, album: Option<Album>) -> Track {
+        Track {
+            id: TrackId::from_id(id).unwrap().into_static(),
+            name: name.to_string(),
+            artists,
+            album,
+            duration: std::time::Duration::from_secs(180),
+            explicit: false,
+            added_at: 0,
+        }
+    }
+
+    #[test]
+    fn parses_track_field_sigils_with_multitoken_fragments() {
+        let query = TrackFieldQuery::parse("quiet @phoebe bridgers $punisher !kyoto");
+
+        assert_eq!(query.general_terms, vec![String::from("quiet")]);
+        assert_eq!(query.artist_terms, vec![String::from("phoebe bridgers")]);
+        assert_eq!(query.album_terms, vec![String::from("punisher")]);
+        assert_eq!(query.title_terms, vec![String::from("kyoto")]);
+        assert!(query.has_field_markers);
+    }
+
+    #[test]
+    fn filters_tracks_by_artist_and_album_fields() {
+        let artist = test_artist("1111111111111111111111", "Phoebe Bridgers");
+        let album = test_album("2222222222222222222222", "Punisher", vec![artist.clone()]);
+        let matching = test_track(
+            "3333333333333333333333",
+            "Kyoto",
+            vec![artist.clone()],
+            Some(album.clone()),
+        );
+        let other = test_track(
+            "4444444444444444444444",
+            "Kyoto",
+            vec![test_artist("5555555555555555555555", "Mitski")],
+            Some(album),
+        );
+
+        let tracks = vec![matching.clone(), other];
+        let filtered = filtered_tracks_from_query("@phoebe $punisher", &tracks);
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].id, matching.id);
+    }
+
+    #[test]
+    fn empty_trailing_track_filter_sigil_keeps_items_visible() {
+        let artist = test_artist("1111111111111111111111", "Phoebe Bridgers");
+        let track = test_track("3333333333333333333333", "Kyoto", vec![artist], None);
+        let tracks = vec![track];
+
+        let filtered = filtered_tracks_from_query("@", &tracks);
+
+        assert_eq!(filtered.len(), 1);
+    }
 }

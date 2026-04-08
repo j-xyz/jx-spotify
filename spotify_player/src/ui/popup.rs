@@ -68,7 +68,14 @@ pub fn render_popup(
             PopupState::Search { query } => {
                 let chunks =
                     Layout::vertical([Constraint::Fill(0), Constraint::Length(2)]).split(rect);
-                let rect = utils::render_panel(frame, &ui.theme, chunks[1], "search", None, true);
+                let rect = utils::render_panel(
+                    frame,
+                    &ui.theme,
+                    chunks[1],
+                    "search",
+                    search_popup_meta(ui),
+                    true,
+                );
                 frame.render_widget(Paragraph::new(format!("/{query}")), rect);
                 (chunks[0], true)
             }
@@ -229,6 +236,32 @@ pub fn render_popup(
                 (rect, false)
             }
         },
+    }
+}
+
+fn search_popup_meta(ui: &UIStateGuard) -> Option<Line<'static>> {
+    match ui.current_page() {
+        PageState::Context {
+            state: Some(crate::state::ContextPageUIState::Playlist { .. }),
+            ..
+        }
+        | PageState::Context {
+            state: Some(crate::state::ContextPageUIState::Album { .. }),
+            ..
+        }
+        | PageState::Context {
+            state: Some(crate::state::ContextPageUIState::Tracks { .. }),
+            ..
+        } => Some(Line::from("! title  @ artist  $ album")),
+        PageState::Context {
+            state:
+                Some(crate::state::ContextPageUIState::Artist {
+                    focus: crate::state::ArtistFocusState::TopTracks,
+                    ..
+                }),
+            ..
+        } => Some(Line::from("! title  @ artist  $ album")),
+        _ => None,
     }
 }
 

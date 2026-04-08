@@ -103,6 +103,20 @@ pub fn render_list_window(
     frame.render_stateful_widget(widget, rect, state);
 }
 
+pub fn render_table_window_from_list_state(
+    frame: &mut Frame,
+    widget: Table,
+    rect: Rect,
+    len: usize,
+    state: &mut ListState,
+) {
+    adjust_list_state(state, len);
+
+    let mut table_state = TableState::default();
+    table_state.select(state.selected());
+    frame.render_stateful_widget(widget, rect, &mut table_state);
+}
+
 /// adjust the `selected` position of a `TableState` if that position is invalid
 fn adjust_table_state(state: &mut TableState, len: usize) {
     if let Some(p) = state.selected() {

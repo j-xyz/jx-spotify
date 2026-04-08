@@ -38,6 +38,9 @@ mod page;
 mod popup;
 mod window;
 
+const WORKSPACE_ROOT_HINT: &str = "/Users/jane/jxyz/maeve";
+const WORKSPACE_GLOW_BIN_HINT: &str = "/Users/jane/go/bin/jx-glow";
+
 /// Start a terminal event handler (key pressed, mouse clicked, etc)
 pub fn start_event_handler(state: &SharedState, client_pub: &flume::Sender<ClientRequest>) {
     while let Ok(event) = crossterm::event::read() {
@@ -1061,12 +1064,35 @@ fn resolve_external_glow_command() -> Result<config::Command> {
         return Ok(command);
     }
 
+    for path in external_glow_workspace_candidates() {
+        if is_runnable_file(&path) {
+            return Ok(config::Command::new(path.to_string_lossy(), &[] as &[&str]));
+        }
+    }
+
     let glow = which::which("jx-glow")
         .context("no external glow command configured and `jx-glow` is not installed on PATH")?;
     Ok(config::Command {
         command: glow.to_string_lossy().into_owned(),
         args: vec![],
     })
+}
+
+fn external_glow_workspace_candidates() -> Vec<PathBuf> {
+    vec![
+        PathBuf::from(WORKSPACE_GLOW_BIN_HINT),
+        Path::new(WORKSPACE_ROOT_HINT)
+            .join("projects")
+            .join("jx-glow")
+            .join("jx-glow"),
+    ]
+}
+
+fn is_runnable_file(path: &Path) -> bool {
+    match fs::metadata(path) {
+        Ok(metadata) => metadata.is_file(),
+        Err(_) => false,
+    }
 }
 
 fn write_external_handoff_file(state: &SharedState, cache_folder: &Path) -> Result<PathBuf> {

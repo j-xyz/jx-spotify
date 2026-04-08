@@ -157,16 +157,36 @@ fn clean_up(mut terminal: Terminal) -> Result<()> {
 fn launch_external_after_exit(request: ExternalLaunchRequest) -> Result<()> {
     let mut command = std::process::Command::new(&request.command);
     command.args(&request.args);
+    command.stdin(std::process::Stdio::inherit());
+    command.stdout(std::process::Stdio::inherit());
+    command.stderr(std::process::Stdio::inherit());
     for (key, value) in &request.env {
         command.env(key, value);
     }
-    command.spawn().with_context(|| {
-        format!(
-            "failed to launch external command after terminal cleanup: `{}`",
-            request.command
-        )
-    })?;
-    Ok(())
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // Replace jx-spotify with the target command so foreground terminal
+        // ownership stays with the handoff process.
+        let err = command.exec();
+        return Err(err).with_context(|| {
+            format!(
+                "failed to exec external command after terminal cleanup: `{}`",
+                request.command
+            )
+        });
+    }
+
+    #[cfg(not(unix))]
+    {
+        command.spawn().with_context(|| {
+            format!(
+                "failed to launch external command after terminal cleanup: `{}`",
+                request.command
+            )
+        })?;
+        Ok(())
+    }
 }
 
 /// Render the application

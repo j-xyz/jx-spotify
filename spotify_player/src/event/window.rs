@@ -55,7 +55,7 @@ pub fn handle_action_for_focused_context_page(
                 ),
                 ArtistFocusState::TopTracks => handle_action_for_selected_item(
                     action,
-                    &ui.search_filtered_items(top_tracks),
+                    &ui.search_filtered_tracks(top_tracks),
                     state,
                     &data,
                     ui,
@@ -69,7 +69,7 @@ pub fn handle_action_for_focused_context_page(
             | Context::Playlist { tracks, .. },
         ) => handle_action_for_selected_item(
             action,
-            &ui.search_filtered_items(tracks),
+            &ui.search_filtered_tracks(tracks),
             state,
             &data,
             ui,
@@ -281,7 +281,7 @@ fn handle_command_for_track_table_window(
     state: &SharedState,
 ) -> Result<bool> {
     let id = ui.current_page_mut().selected().unwrap_or_default();
-    let filtered_tracks = ui.search_filtered_items(tracks);
+    let filtered_tracks = ui.search_filtered_tracks(tracks);
     if id >= filtered_tracks.len() {
         return Ok(false);
     }

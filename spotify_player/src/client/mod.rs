@@ -977,30 +977,67 @@ impl AppClient {
 
     /// Start a playback
     async fn start_playback(&self, playback: Playback, device_id: Option<&str>) -> Result<()> {
+        let resolved_device_id = if let Some(device_id) = device_id {
+            Some(device_id.to_string())
+        } else {
+            self.find_available_device().await?
+        };
+        let target_device_id = resolved_device_id.as_deref();
+
+        if device_id.is_none() {
+            if let Some(device_id) = target_device_id {
+                tracing::info!("Starting playback with resolved available device id={device_id}");
+            } else {
+                tracing::warn!(
+                    "Starting playback without an explicit device id because no available device was found"
+                );
+            }
+        }
+
         match playback {
             Playback::Context(id, offset) => match id {
                 ContextId::Album(id) => {
-                    self.start_context_playback(PlayContextId::from(id), device_id, offset, None)
-                        .await?;
+                    self.start_context_playback(
+                        PlayContextId::from(id),
+                        target_device_id,
+                        offset,
+                        None,
+                    )
+                    .await?;
                 }
                 ContextId::Artist(id) => {
-                    self.start_context_playback(PlayContextId::from(id), device_id, offset, None)
-                        .await?;
+                    self.start_context_playback(
+                        PlayContextId::from(id),
+                        target_device_id,
+                        offset,
+                        None,
+                    )
+                    .await?;
                 }
                 ContextId::Playlist(id) => {
-                    self.start_context_playback(PlayContextId::from(id), device_id, offset, None)
-                        .await?;
+                    self.start_context_playback(
+                        PlayContextId::from(id),
+                        target_device_id,
+                        offset,
+                        None,
+                    )
+                    .await?;
                 }
                 ContextId::Show(id) => {
-                    self.start_context_playback(PlayContextId::from(id), device_id, offset, None)
-                        .await?;
+                    self.start_context_playback(
+                        PlayContextId::from(id),
+                        target_device_id,
+                        offset,
+                        None,
+                    )
+                    .await?;
                 }
                 ContextId::Tracks(_) => {
                     anyhow::bail!("`StartPlayback` request for `tracks` context is not supported")
                 }
             },
             Playback::URIs(ids, offset) => {
-                self.start_uris_playback(ids, device_id, offset, None)
+                self.start_uris_playback(ids, target_device_id, offset, None)
                     .await?;
             }
         }
