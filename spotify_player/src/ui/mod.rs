@@ -150,20 +150,15 @@ fn clean_up(mut terminal: Terminal) -> Result<()> {
 
 /// Render the application
 fn render_application(frame: &mut Frame, state: &SharedState, ui: &mut UIStateGuard, rect: Rect) {
-    // rendering order: playback window -> shortcut help popup -> other popups -> main layout
+    // rendering order: footer chrome -> shortcut help popup -> other popups -> main layout
 
     let content_rect = rect.inner(Margin {
         vertical: 1,
         horizontal: 0,
     });
-    render_app_chrome(frame, ui, rect);
+    render_app_chrome(frame, state, ui, rect);
 
-    // render playback window before other popups and windows to ensure nothing is rendered on top
-    // of the playback window, which is to avoid "duplicated images" issue
-    // See: https://github.com/aome510/spotify-player/issues/498
-    let rect = playback::render_playback_window(frame, state, ui, content_rect);
-
-    let rect = popup::render_shortcut_help_popup(frame, state, ui, rect);
+    let rect = popup::render_shortcut_help_popup(frame, state, ui, content_rect);
 
     let (rect, is_active) = popup::render_popup(frame, state, ui, rect);
 
@@ -192,7 +187,7 @@ fn render_main_layout(
     }
 }
 
-fn render_app_chrome(frame: &mut Frame, ui: &UIStateGuard, rect: Rect) {
+fn render_app_chrome(frame: &mut Frame, state: &SharedState, ui: &mut UIStateGuard, rect: Rect) {
     let top = Rect::new(rect.x, rect.y, rect.width, 1);
     let bottom = Rect::new(rect.x, rect.bottom().saturating_sub(1), rect.width, 1);
 
@@ -211,8 +206,14 @@ fn render_app_chrome(frame: &mut Frame, ui: &UIStateGuard, rect: Rect) {
     );
 
     let bottom_chunks =
-        Layout::horizontal([Constraint::Length(11), Constraint::Fill(0)]).split(bottom);
-    frame.render_widget(Paragraph::new(""), bottom_chunks[0]);
+        Layout::horizontal([Constraint::Fill(1), Constraint::Length(28)]).split(bottom);
+    if let Some(now_playing) = playback::footer_now_playing_line(state, ui) {
+        frame.render_widget(Paragraph::new(now_playing), bottom_chunks[0]);
+        ui.playback_progress_bar_rect = bottom_chunks[0];
+    } else {
+        frame.render_widget(Paragraph::new(""), bottom_chunks[0]);
+        ui.playback_progress_bar_rect = Rect::default();
+    }
     frame.render_widget(
         Paragraph::new(app_key_hint_spans(ui)).alignment(Alignment::Right),
         bottom_chunks[1],
@@ -245,11 +246,7 @@ fn app_key_hint_spans(ui: &UIStateGuard) -> Line<'static> {
         Span::styled("/", key),
         Span::styled(" search ", label),
         Span::styled("?", key),
-        Span::styled(" help ", label),
-        Span::styled("esc", key),
-        Span::styled(" clear ", label),
-        Span::styled("tab", key),
-        Span::styled(" focus", label),
+        Span::styled(" help", label),
     ])
 }
 

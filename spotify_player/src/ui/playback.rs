@@ -17,6 +17,7 @@ use std::collections::BTreeSet;
 /// - track title, artists, album
 /// - playback metadata (playing state, repeat state, shuffle state, volume, device, etc)
 /// - cover image (if `image` feature is enabled)
+#[allow(dead_code)]
 pub fn render_playback_window(
     frame: &mut Frame,
     state: &SharedState,
@@ -31,7 +32,7 @@ pub fn render_playback_window(
         &ui.theme,
         rect,
         "",
-        Some(playback_meta_line(ui, &player)),
+        footer_now_playing_line(state, ui),
         true,
     );
     if let Some(ref playback) = player.playback {
@@ -191,18 +192,32 @@ pub fn render_playback_window(
     other_rect
 }
 
-fn playback_meta_line(ui: &UIStateGuard, player: &crate::state::PlayerState) -> Line<'static> {
+pub fn footer_now_playing_line(state: &SharedState, ui: &UIStateGuard) -> Option<Line<'static>> {
+    let player = state.player.read();
+    let playback = player.buffered_playback.as_ref()?;
+    let item = player.currently_playing()?;
+
+    let playback_text =
+        construct_playback_text(ui, state, item, playback, player.playback_progress());
+    let first_line = playback_text.lines.first()?.clone();
+
     let device_name = player
         .playback
         .as_ref()
         .map(|playback| playback.device.name.clone())
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| "no active device".to_string());
+        .filter(|name| !name.is_empty());
 
-    Line::from(vec![Span::styled(device_name, ui.theme.playlist_desc())])
+    let mut spans = first_line.spans;
+    if let Some(device_name) = device_name {
+        spans.push(Span::styled(" | ", ui.theme.playback_metadata()));
+        spans.push(Span::styled(device_name, ui.theme.playlist_desc()));
+    }
+
+    Some(Line::from(spans))
 }
 
 #[cfg(feature = "image")]
+#[allow(dead_code)]
 fn split_rect_for_cover_img(rect: Rect) -> (Rect, Rect) {
     let configs = config::get_config();
     let hor_chunks = Layout::horizontal([
@@ -413,9 +428,9 @@ fn construct_playback_text(
                             if show_volume {
                                 let (glyph, volume_value) =
                                     if let Some(volume) = playback.mute_state {
-                                        ("🔇", format!("{volume}%"))
+                                        ("▯", format!("{volume}%"))
                                     } else {
-                                        ("🔊", format!("{}%", playback.volume.unwrap_or_default()))
+                                        ("▮", format!("{}%", playback.volume.unwrap_or_default()))
                                     };
                                 active_fields.push(vec![
                                     Span::styled(format!("{glyph} "), label_style),
@@ -493,6 +508,7 @@ fn render_playback_cover_image(state: &SharedState, ui: &mut UIStateGuard) -> Re
 
 /// Split the given area into two, the first one for the playback window
 /// and the second one for the main application's layout (popup, page, etc).
+#[allow(dead_code)]
 #[allow(unused_variables)]
 fn split_rect_for_playback_window(
     state: &SharedState,
@@ -527,6 +543,7 @@ fn split_rect_for_playback_window(
     (chunks[1], chunks[0])
 }
 
+#[allow(dead_code)]
 fn estimated_playback_content_height(state: &SharedState, ui: &UIStateGuard) -> Option<usize> {
     let _ = (state, ui);
     let playback_format_lines = config::get_config()

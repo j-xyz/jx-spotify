@@ -94,27 +94,7 @@ fn handle_mouse_event(
 ) -> Result<()> {
     tracing::debug!("Handling mouse event: {event:?}");
 
-    let enable_scroll = config::get_config().app_config.enable_mouse_scroll_volume;
-
     match event.kind {
-        crossterm::event::MouseEventKind::ScrollUp if enable_scroll => {
-            let step = config::get_config().app_config.volume_scroll_step;
-            if let Some(ref playback) = state.player.read().buffered_playback {
-                if let Some(volume) = playback.volume {
-                    let new_volume = std::cmp::min(volume as u8 + step, 100);
-                    client_pub.send(ClientRequest::Player(PlayerRequest::Volume(new_volume)))?;
-                }
-            }
-        }
-        crossterm::event::MouseEventKind::ScrollDown if enable_scroll => {
-            let step = config::get_config().app_config.volume_scroll_step;
-            if let Some(ref playback) = state.player.read().buffered_playback {
-                if let Some(volume) = playback.volume {
-                    let new_volume = (volume as u8).saturating_sub(step);
-                    client_pub.send(ClientRequest::Player(PlayerRequest::Volume(new_volume)))?;
-                }
-            }
-        }
         // a left click event
         crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
             let rect = state.ui.lock().playback_progress_bar_rect;

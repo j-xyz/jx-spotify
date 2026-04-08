@@ -51,7 +51,7 @@ A sample `app.toml` is available at [examples/app.toml](../examples/app.toml).
 | `notify_streaming_only`           | Send notifications only when streaming is active (requires `streaming` and `notify` features). | `false`                                                                |
 | `default_device`                  | Default device to connect to on startup.                                                       | `spotify-player`                                                       |
 | `play_icon`                       | Icon for playing state.                                                                        | `▶`                                                                    |
-| `pause_icon`                      | Icon for paused state.                                                                         | `▌▌`                                                                   |
+| `pause_icon`                      | Icon for paused state.                                                                         | `‖`                                                                    |
 | `liked_icon`                      | Icon for liked songs.                                                                          | `♥`                                                                    |
 | `explicit_icon`                   | Icon for explicit songs.                                                                       | `(E)`                                                                  |
 | `border_type`                     | Border style: `Hidden`, `Plain`, `Rounded`, `Double`, or `Thick`.                              | `Plain`                                                                |
@@ -65,8 +65,6 @@ A sample `app.toml` is available at [examples/app.toml](../examples/app.toml).
 | `cover_img_pixels`                | Pixels per side for cover image (requires `pixelate` feature).                                 | `16`                                                                   |
 | `seek_duration_secs`              | Seek duration in seconds for seek commands.                                                    | `5`                                                                    |
 | `sort_artist_albums_by_type`      | Sort albums by type on artist pages.                                                           | `false`                                                                |
-| `volume_scroll_step`              | Volume change step when using mouse scroll.                                                    | `5`                                                                    |
-| `enable_mouse_scroll_volume`      | Enable volume control via mouse scroll.                                                        | `true`                                                                 |
 | `device`                          | Device configuration (see below).                                                              | See below                                                              |
 
 ### Notes
