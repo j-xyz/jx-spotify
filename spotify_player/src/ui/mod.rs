@@ -9,7 +9,7 @@ use crate::{
 };
 use anyhow::{Context as AnyhowContext, Result};
 use ratatui::{
-    layout::{Alignment, Constraint, Layout, Margin, Rect},
+    layout::{Alignment, Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Cell, List, ListItem, ListState, Paragraph, Row, Table, TableState, Wrap},
@@ -152,13 +152,17 @@ fn clean_up(mut terminal: Terminal) -> Result<()> {
 fn render_application(frame: &mut Frame, state: &SharedState, ui: &mut UIStateGuard, rect: Rect) {
     // rendering order: footer chrome -> shortcut help popup -> other popups -> main layout
 
-    let content_rect = rect.inner(Margin {
-        vertical: 1,
-        horizontal: 0,
-    });
-    render_app_chrome(frame, state, ui, rect);
+    let footer_rows: u16 = if ui.footer_help_preview_visible { 2 } else { 1 };
+    let chunks = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Fill(0),
+        Constraint::Length(footer_rows),
+    ])
+    .split(rect);
 
-    let rect = popup::render_shortcut_help_popup(frame, state, ui, content_rect);
+    render_app_chrome(frame, state, ui, chunks[0], chunks[2]);
+
+    let rect = popup::render_shortcut_help_popup(frame, state, ui, chunks[1]);
 
     let (rect, is_active) = popup::render_popup(frame, state, ui, rect);
 
@@ -187,10 +191,13 @@ fn render_main_layout(
     }
 }
 
-fn render_app_chrome(frame: &mut Frame, state: &SharedState, ui: &mut UIStateGuard, rect: Rect) {
-    let top = Rect::new(rect.x, rect.y, rect.width, 1);
-    let bottom = Rect::new(rect.x, rect.bottom().saturating_sub(1), rect.width, 1);
-
+fn render_app_chrome(
+    frame: &mut Frame,
+    state: &SharedState,
+    ui: &mut UIStateGuard,
+    top: Rect,
+    footer: Rect,
+) {
     let top_chunks = Layout::horizontal([Constraint::Length(11), Constraint::Fill(0)]).split(top);
     let badge_style = Style::default()
         .fg(ratatui::style::Color::Rgb(0x0f, 0x14, 0x19))
@@ -200,42 +207,69 @@ fn render_app_chrome(frame: &mut Frame, state: &SharedState, ui: &mut UIStateGua
         Paragraph::new(Span::styled("jx-spotify", badge_style)),
         top_chunks[0],
     );
-    frame.render_widget(
-        Paragraph::new(app_family_spans(ui)).alignment(Alignment::Right),
-        top_chunks[1],
-    );
+    frame.render_widget(Paragraph::new(""), top_chunks[1]);
 
-    let bottom_chunks =
-        Layout::horizontal([Constraint::Fill(1), Constraint::Length(28)]).split(bottom);
-    if let Some(now_playing) = playback::footer_now_playing_line(state, ui) {
-        frame.render_widget(Paragraph::new(now_playing), bottom_chunks[0]);
-        ui.playback_progress_bar_rect = bottom_chunks[0];
+    if ui.footer_help_preview_visible {
+        let footer_chunks =
+            Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).split(footer);
+        frame.render_widget(
+            Paragraph::new(footer_help_preview_spans(ui)),
+            footer_chunks[0],
+        );
+        let bottom_chunks = Layout::horizontal([Constraint::Fill(1), Constraint::Length(28)])
+            .split(footer_chunks[1]);
+        if let Some(now_playing) = playback::footer_now_playing_line(state, ui) {
+            frame.render_widget(Paragraph::new(now_playing), bottom_chunks[0]);
+            ui.playback_progress_bar_rect = bottom_chunks[0];
+        } else {
+            frame.render_widget(Paragraph::new(""), bottom_chunks[0]);
+            ui.playback_progress_bar_rect = Rect::default();
+        }
+        frame.render_widget(
+            Paragraph::new(app_key_hint_spans(ui)).alignment(Alignment::Right),
+            bottom_chunks[1],
+        );
     } else {
-        frame.render_widget(Paragraph::new(""), bottom_chunks[0]);
-        ui.playback_progress_bar_rect = Rect::default();
+        let bottom_chunks =
+            Layout::horizontal([Constraint::Fill(1), Constraint::Length(28)]).split(footer);
+        if let Some(now_playing) = playback::footer_now_playing_line(state, ui) {
+            frame.render_widget(Paragraph::new(now_playing), bottom_chunks[0]);
+            ui.playback_progress_bar_rect = bottom_chunks[0];
+        } else {
+            frame.render_widget(Paragraph::new(""), bottom_chunks[0]);
+            ui.playback_progress_bar_rect = Rect::default();
+        }
+        frame.render_widget(
+            Paragraph::new(app_key_hint_spans(ui)).alignment(Alignment::Right),
+            bottom_chunks[1],
+        );
     }
-    frame.render_widget(
-        Paragraph::new(app_key_hint_spans(ui)).alignment(Alignment::Right),
-        bottom_chunks[1],
-    );
 }
 
-fn app_family_spans(ui: &UIStateGuard) -> Line<'static> {
+fn footer_help_preview_spans(ui: &UIStateGuard) -> Line<'static> {
     let key = ui.theme.page_desc().add_modifier(Modifier::BOLD);
     let label = ui.theme.playback_metadata();
     Line::from(vec![
         Span::styled("a", key),
-        Span::styled("ction ", label),
-        Span::styled("m", key),
-        Span::styled("ode ", label),
-        Span::styled("r", key),
-        Span::styled("adio ", label),
-        Span::styled("s", key),
-        Span::styled("orting ", label),
+        Span::styled(" action, ", label),
         Span::styled("g", key),
-        Span::styled("o ", label),
+        Span::styled(" go, ", label),
+        Span::styled("m", key),
+        Span::styled(" mode, ", label),
+        Span::styled("r", key),
+        Span::styled(" radio, ", label),
+        Span::styled("s", key),
+        Span::styled(" sort, ", label),
         Span::styled("u", key),
-        Span::styled("ser", label),
+        Span::styled(" user, ", label),
+        Span::styled("/", key),
+        Span::styled(" search, ", label),
+        Span::styled("esc", key),
+        Span::styled(" clear/back, ", label),
+        Span::styled("tab", key),
+        Span::styled(" move focus, ", label),
+        Span::styled("?", key),
+        Span::styled(" help", label),
     ])
 }
 

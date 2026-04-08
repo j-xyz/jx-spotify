@@ -130,6 +130,21 @@ fn handle_key_event(
 ) -> Result<()> {
     let key: Key = event.into();
     let mut ui = state.ui.lock();
+    let is_question_mark = matches!(key, Key::None(KeyCode::Char('?')));
+
+    if is_question_mark && !page_accepts_text_input(&ui) {
+        ui.toggle_footer_help_preview();
+        state.request_redraw();
+        if ui.footer_help_preview_visible {
+            return Ok(());
+        }
+    } else if matches!(key, Key::None(KeyCode::Esc)) && ui.footer_help_preview_visible {
+        ui.hide_footer_help_preview();
+        state.request_redraw();
+    } else if ui.footer_help_preview_visible && !matches!(key, Key::None(KeyCode::Esc)) {
+        ui.hide_footer_help_preview();
+        state.request_redraw();
+    }
 
     if !ui.input_key_sequence.keys.is_empty() && key == Key::None(KeyCode::Esc) {
         ui.input_key_sequence.keys.clear();

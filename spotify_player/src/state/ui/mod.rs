@@ -34,6 +34,7 @@ pub struct UIState {
 
     pub history: Vec<PageState>,
     pub popup: Option<PopupState>,
+    pub footer_help_preview_visible: bool,
 
     /// The rectangle representing the playback progress bar,
     /// which is mainly used to handle mouse click events (for seeking command)
@@ -65,6 +66,14 @@ impl UIState {
     pub fn new_page(&mut self, page: PageState) {
         self.history.push(page);
         self.popup = None;
+    }
+
+    pub fn toggle_footer_help_preview(&mut self) {
+        self.footer_help_preview_visible = !self.footer_help_preview_visible;
+    }
+
+    pub fn hide_footer_help_preview(&mut self) {
+        self.footer_help_preview_visible = false;
     }
 
     pub fn open_or_reset_search_tui_home(&mut self) {
@@ -133,6 +142,7 @@ impl Default for UIState {
                 state: LibraryPageUIState::new(),
             }],
             popup: None,
+            footer_help_preview_visible: false,
 
             playback_progress_bar_rect: Rect::default(),
 

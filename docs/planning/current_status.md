@@ -6,4 +6,6 @@
 - Last verification: `cargo check --manifest-path /Users/jane/jxyz/maeve/projects/jx-spotify/spotify_player/Cargo.toml` passed after the restyle pass.
 - Next slice: visual validation in the live TUI and any follow-up spacing or accent cleanup that falls out of that pass.
 - Recent related commit: `eb552eb` (`fix: move spotify badge to global header`).
-- New restyle slice: compact now-playing footer, shorter playback window, album/radio table cleanup, global help family promotion, and mouse-volume cleanup.
+- New restyle slice: compact now-playing footer, shorter playback window, album/radio table cleanup, global help family promotion, mouse-volume cleanup, and a footer mini-help preview on `?`.
+- Mini-help preview update: the top-right family banner is gone, `?` now reveals a one-line footer preview first, and a second `?` falls through to full help.
+- Footer layout update: the preview row and now-playing row now have separate footer lines, so they no longer fight for the same space.
