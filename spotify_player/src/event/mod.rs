@@ -9,10 +9,10 @@ use crate::{
     state::{
         ActionListItem, Album, AlbumId, Artist, ArtistFocusState, ArtistId, ArtistPopupAction,
         BrowsePageUIState, Context, ContextId, ContextPageType, ContextPageUIState, DataReadGuard,
-        Focusable, Id, Item, ItemId, LibraryFocusState, LibraryPageUIState, PageState, PageType,
-        PlayableId, Playback, PlaylistCreateCurrentField, PlaylistFolderItem, PlaylistId,
-        PlaylistPopupAction, PopupState, SearchFocusState, SearchPageUIState, SearchTuiFocus,
-        SharedState, ShowId, Track, TrackId, TrackOrder, TracksId, UIStateGuard,
+        ExternalLaunchRequest, Focusable, Id, Item, ItemId, LibraryFocusState, LibraryPageUIState,
+        PageState, PageType, PlayableId, Playback, PlaylistCreateCurrentField, PlaylistFolderItem,
+        PlaylistId, PlaylistPopupAction, PopupState, SearchFocusState, SearchPageUIState,
+        SearchTuiFocus, SharedState, ShowId, Track, TrackId, TrackOrder, TracksId, UIStateGuard,
         USER_LIKED_TRACKS_ID, USER_RECENTLY_PLAYED_TRACKS_ID, USER_TOP_TRACKS_ID,
     },
     ui::{single_line_input::LineInput, Orientation},
@@ -258,6 +258,7 @@ pub fn handle_action_in_context(
     action: Action,
     context: ActionContext,
     client_pub: &flume::Sender<ClientRequest>,
+    state: &SharedState,
     data: &DataReadGuard,
     ui: &mut UIStateGuard,
 ) -> Result<bool> {
@@ -324,7 +325,7 @@ pub fn handle_action_in_context(
                 Ok(true)
             }
             Action::GoToRadio => {
-                handle_go_to_radio(&track.id.uri(), &track.name, ui, client_pub)?;
+                handle_go_to_radio(&track.id.uri(), &track.name, ui, state, client_pub)?;
                 Ok(true)
             }
             Action::ShowActionsOnArtist => {
@@ -367,7 +368,7 @@ pub fn handle_action_in_context(
                 Ok(true)
             }
             Action::GoToRadio => {
-                handle_go_to_radio(&album.id.uri(), &album.name, ui, client_pub)?;
+                handle_go_to_radio(&album.id.uri(), &album.name, ui, state, client_pub)?;
                 Ok(true)
             }
             Action::ShowActionsOnArtist => {
@@ -415,7 +416,7 @@ pub fn handle_action_in_context(
                 Ok(true)
             }
             Action::GoToRadio => {
-                handle_go_to_radio(&artist.id.uri(), &artist.name, ui, client_pub)?;
+                handle_go_to_radio(&artist.id.uri(), &artist.name, ui, state, client_pub)?;
                 Ok(true)
             }
             _ => Ok(false),
@@ -427,7 +428,7 @@ pub fn handle_action_in_context(
                 Ok(true)
             }
             Action::GoToRadio => {
-                handle_go_to_radio(&playlist.id.uri(), &playlist.name, ui, client_pub)?;
+                handle_go_to_radio(&playlist.id.uri(), &playlist.name, ui, state, client_pub)?;
                 Ok(true)
             }
             Action::CopyLink => {
@@ -528,9 +529,22 @@ fn handle_go_to_radio(
     seed_uri: &str,
     seed_name: &str,
     ui: &mut UIStateGuard,
+    state: &SharedState,
     client_pub: &flume::Sender<ClientRequest>,
 ) -> anyhow::Result<()> {
     let radio_id = TracksId::new(format!("radio:{seed_uri}"), format!("{seed_name} Radio"));
+    {
+        let mut data = state.data.write();
+        data.user_data.set_last_radio_tracks_id(radio_id.clone());
+        if let Err(err) = crate::state::store_data_into_file_cache(
+            crate::state::FileCacheKey::LastRadioSeed,
+            &crate::config::get_config().cache_folder,
+            &data.user_data.last_radio_tracks_id,
+        ) {
+            tracing::warn!("Failed to store last radio seed cache: {err:#}");
+        }
+    }
+    state.player.write().last_radio_tracks_id = Some(radio_id.clone());
     ui.new_page(PageState::Context {
         id: None,
         context_page_type: ContextPageType::Browsing(ContextId::Tracks(radio_id.clone())),
@@ -598,6 +612,7 @@ fn handle_global_action(
                             action,
                             ActionContext::Track(track),
                             client_pub,
+                            state,
                             &data,
                             ui,
                         );
@@ -608,6 +623,7 @@ fn handle_global_action(
                         action,
                         ActionContext::Episode(episode.clone().into()),
                         client_pub,
+                        state,
                         &data,
                         ui,
                     );
@@ -692,7 +708,7 @@ fn handle_global_command(
             ui.new_page(PageState::Logs { scroll_offset: 0 });
         }
         Command::GoExternalGlow => {
-            launch_external_glow(state)?;
+            ui.pending_external_launch = Some(build_external_glow_launch_request(state)?);
             ui.is_running = false;
         }
         Command::RefreshPlayback => {
@@ -710,6 +726,7 @@ fn handle_global_command(
                                 Action::GoToRadio,
                                 ActionContext::Track(track),
                                 client_pub,
+                                state,
                                 &data,
                                 ui,
                             )?;
@@ -720,6 +737,7 @@ fn handle_global_command(
                             Action::GoToRadio,
                             ActionContext::Episode(episode.clone().into()),
                             client_pub,
+                            state,
                             &data,
                             ui,
                         )?;
@@ -1019,22 +1037,19 @@ struct ExternalNowPlayingPayload {
     progress_ms: Option<i64>,
 }
 
-fn launch_external_glow(state: &SharedState) -> Result<()> {
+fn build_external_glow_launch_request(state: &SharedState) -> Result<ExternalLaunchRequest> {
     let cache_folder = config::get_config().cache_folder.clone();
     let handoff_path = write_external_handoff_file(state, &cache_folder)?;
     let external_command = resolve_external_glow_command()?;
 
-    let mut command = std::process::Command::new(&external_command.command);
-    command.args(&external_command.args);
-    command.env("JX_GLOW_HANDOFF_FILE", &handoff_path);
-    command.spawn().with_context(|| {
-        format!(
-            "failed to launch external jx-glow command `{}`",
-            external_command.command
-        )
-    })?;
-
-    Ok(())
+    Ok(ExternalLaunchRequest {
+        command: external_command.command,
+        args: external_command.args,
+        env: vec![(
+            "JX_GLOW_HANDOFF_FILE".to_string(),
+            handoff_path.to_string_lossy().to_string(),
+        )],
+    })
 }
 
 fn resolve_external_glow_command() -> Result<config::Command> {

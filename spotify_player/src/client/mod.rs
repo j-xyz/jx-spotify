@@ -797,11 +797,10 @@ impl AppClient {
     async fn find_available_device(&self) -> Result<Option<String>> {
         let devices = self.available_devices().await?;
         tracing::info!("Available devices: {devices:?}");
-
-        // if there is an active device, return it
-        if let Some(d) = devices.iter().find(|d| d.is_active) {
-            return Ok(d.id.clone());
-        }
+        let active_device_id = devices
+            .iter()
+            .find(|device| device.is_active)
+            .and_then(|device| device.id.clone());
 
         // convert a vector of `Device` items into `(name, id)` pairs
         let mut devices = devices
@@ -832,10 +831,15 @@ impl AppClient {
         }
 
         // Prioritize the `default_device` specified in the application's configurations,
-        // otherwise, use the first available device.
+        // then prefer the currently active device, and otherwise use the first available device.
         let id = devices
             .iter()
             .position(|d| d.0 == configs.app_config.default_device)
+            .or_else(|| {
+                active_device_id
+                    .as_ref()
+                    .and_then(|active_id| devices.iter().position(|d| d.1 == *active_id))
+            })
             .unwrap_or_default();
 
         Ok(Some(devices.remove(id).1))

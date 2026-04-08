@@ -17,6 +17,8 @@ pub struct PlayerState {
 
     /// The currently playing Tracks context (for contexts not tracked by Spotify's playback, e.g. liked/top tracks)
     pub currently_playing_tracks_id: Option<TracksId>,
+    /// The most recently played radio seed, used to restore radio context after a relaunch.
+    pub last_radio_tracks_id: Option<TracksId>,
 }
 
 impl PlayerState {
@@ -97,7 +99,8 @@ impl PlayerState {
                 None => self
                     .currently_playing_tracks_id
                     .clone()
-                    .map(ContextId::Tracks),
+                    .map(ContextId::Tracks)
+                    .or_else(|| self.last_radio_tracks_id.clone().map(ContextId::Tracks)),
             },
             None => None,
         }

@@ -753,22 +753,22 @@ pub fn handle_item_action(
 
     match item {
         ActionListItem::Track(track, actions) => {
-            handle_action_in_context(actions[n], track.into(), client_pub, &data, ui)
+            handle_action_in_context(actions[n], track.into(), client_pub, state, &data, ui)
         }
         ActionListItem::Album(album, actions) => {
-            handle_action_in_context(actions[n], album.into(), client_pub, &data, ui)
+            handle_action_in_context(actions[n], album.into(), client_pub, state, &data, ui)
         }
         ActionListItem::Artist(artist, actions) => {
-            handle_action_in_context(actions[n], artist.into(), client_pub, &data, ui)
+            handle_action_in_context(actions[n], artist.into(), client_pub, state, &data, ui)
         }
         ActionListItem::Playlist(playlist, actions) => {
-            handle_action_in_context(actions[n], playlist.into(), client_pub, &data, ui)
+            handle_action_in_context(actions[n], playlist.into(), client_pub, state, &data, ui)
         }
         ActionListItem::Show(show, actions) => {
-            handle_action_in_context(actions[n], show.into(), client_pub, &data, ui)
+            handle_action_in_context(actions[n], show.into(), client_pub, state, &data, ui)
         }
         ActionListItem::Episode(episode, actions) => {
-            handle_action_in_context(actions[n], episode.into(), client_pub, &data, ui)
+            handle_action_in_context(actions[n], episode.into(), client_pub, state, &data, ui)
         }
     }
 }

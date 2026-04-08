@@ -40,6 +40,7 @@ pub fn handle_action_for_focused_context_page(
                 ArtistFocusState::Albums => handle_action_for_selected_item(
                     action,
                     &ui.search_filtered_items(albums),
+                    state,
                     &data,
                     ui,
                     client_pub,
@@ -47,6 +48,7 @@ pub fn handle_action_for_focused_context_page(
                 ArtistFocusState::RelatedArtists => handle_action_for_selected_item(
                     action,
                     &ui.search_filtered_items(related_artists),
+                    state,
                     &data,
                     ui,
                     client_pub,
@@ -54,6 +56,7 @@ pub fn handle_action_for_focused_context_page(
                 ArtistFocusState::TopTracks => handle_action_for_selected_item(
                     action,
                     &ui.search_filtered_items(top_tracks),
+                    state,
                     &data,
                     ui,
                     client_pub,
@@ -67,6 +70,7 @@ pub fn handle_action_for_focused_context_page(
         ) => handle_action_for_selected_item(
             action,
             &ui.search_filtered_items(tracks),
+            state,
             &data,
             ui,
             client_pub,
@@ -74,6 +78,7 @@ pub fn handle_action_for_focused_context_page(
         Some(Context::Show { episodes, .. }) => handle_action_for_selected_item(
             action,
             &ui.search_filtered_items(episodes),
+            state,
             &data,
             ui,
             client_pub,
@@ -85,6 +90,7 @@ pub fn handle_action_for_focused_context_page(
 pub fn handle_action_for_selected_item<T: Into<ActionContext> + Clone>(
     action: Action,
     items: &[&T],
+    state: &SharedState,
     data: &DataReadGuard,
     ui: &mut UIStateGuard,
     client_pub: &flume::Sender<ClientRequest>,
@@ -94,7 +100,14 @@ pub fn handle_action_for_selected_item<T: Into<ActionContext> + Clone>(
         return Ok(false);
     }
 
-    handle_action_in_context(action, items[id].clone().into(), client_pub, data, ui)
+    handle_action_in_context(
+        action,
+        items[id].clone().into(),
+        client_pub,
+        state,
+        data,
+        ui,
+    )
 }
 
 /// Handle a command for the currently focused context window

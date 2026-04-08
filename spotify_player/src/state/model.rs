@@ -45,7 +45,7 @@ pub enum Context {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TracksId {
     pub uri: String,
     pub kind: String,

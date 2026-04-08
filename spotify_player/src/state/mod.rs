@@ -54,10 +54,12 @@ impl State {
         }
 
         let app_data = AppData::new(&configs.cache_folder);
+        let mut player = PlayerState::default();
+        player.last_radio_tracks_id = app_data.user_data.last_radio_tracks_id.clone();
 
         Self {
             ui: Mutex::new(ui),
-            player: RwLock::new(PlayerState::default()),
+            player: RwLock::new(player),
             data: RwLock::new(app_data),
             redraw_signal: Arc::new(RedrawSignal::default()),
             is_daemon,

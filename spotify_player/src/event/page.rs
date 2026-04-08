@@ -211,7 +211,7 @@ fn handle_search_tui_command_or_action(
             Some(radio_search_tui_item(client_pub, state, ui)?)
         }
         Some(CommandOrAction::Command(Command::GoToRadioFromCurrentContext)) => {
-            Some(radio_search_tui_context(client_pub, ui)?)
+            Some(radio_search_tui_context(client_pub, state, ui)?)
         }
         Some(CommandOrAction::Command(Command::ShowActionsOnSelectedItem)) => {
             Some(show_actions_on_search_tui_item(state, ui)?)
@@ -442,20 +442,40 @@ fn handle_action_for_selected_search_tui_item(
     let data = state.data.read();
     match selection {
         SearchTuiSelection::Global(search_tui::SearchTuiItem::Track { track })
-        | SearchTuiSelection::ContextTrack(track) => {
-            handle_action_in_context(action, ActionContext::Track(track), client_pub, &data, ui)
-        }
+        | SearchTuiSelection::ContextTrack(track) => handle_action_in_context(
+            action,
+            ActionContext::Track(track),
+            client_pub,
+            state,
+            &data,
+            ui,
+        ),
         SearchTuiSelection::Global(search_tui::SearchTuiItem::Artist { artist }) => {
-            handle_action_in_context(action, ActionContext::Artist(artist), client_pub, &data, ui)
+            handle_action_in_context(
+                action,
+                ActionContext::Artist(artist),
+                client_pub,
+                state,
+                &data,
+                ui,
+            )
         }
         SearchTuiSelection::Global(search_tui::SearchTuiItem::Album { album }) => {
-            handle_action_in_context(action, ActionContext::Album(album), client_pub, &data, ui)
+            handle_action_in_context(
+                action,
+                ActionContext::Album(album),
+                client_pub,
+                state,
+                &data,
+                ui,
+            )
         }
         SearchTuiSelection::Global(search_tui::SearchTuiItem::Playlist { playlist }) => {
             handle_action_in_context(
                 action,
                 ActionContext::Playlist(playlist),
                 client_pub,
+                state,
                 &data,
                 ui,
             )
@@ -704,12 +724,13 @@ fn radio_search_tui_item(
         remember_recent_track_seed(state, &track, RecentTrackSeedSource::Radio);
     }
 
-    super::handle_go_to_radio(&seed_uri, &seed_name, ui, client_pub)?;
+    super::handle_go_to_radio(&seed_uri, &seed_name, ui, state, client_pub)?;
     Ok(true)
 }
 
 fn radio_search_tui_context(
     client_pub: &flume::Sender<ClientRequest>,
+    state: &SharedState,
     ui: &mut UIStateGuard,
 ) -> Result<bool> {
     let (seed_uri, seed_name) = match ui.current_page() {
@@ -722,7 +743,7 @@ fn radio_search_tui_context(
         _ => anyhow::bail!("expect a search tui page"),
     };
 
-    super::handle_go_to_radio(&seed_uri, &seed_name, ui, client_pub)?;
+    super::handle_go_to_radio(&seed_uri, &seed_name, ui, state, client_pub)?;
     Ok(true)
 }
 
@@ -760,6 +781,7 @@ fn handle_action_for_library_page(
                 .into_iter()
                 .copied()
                 .collect::<Vec<_>>(),
+            state,
             &data,
             ui,
             client_pub,
@@ -767,6 +789,7 @@ fn handle_action_for_library_page(
         LibraryFocusState::SavedAlbums => window::handle_action_for_selected_item(
             action,
             &ui.search_filtered_items(&data.user_data.saved_albums),
+            state,
             &data,
             ui,
             client_pub,
@@ -774,6 +797,7 @@ fn handle_action_for_library_page(
         LibraryFocusState::FollowedArtists => window::handle_action_for_selected_item(
             action,
             &ui.search_filtered_items(&data.user_data.followed_artists),
+            state,
             &data,
             ui,
             client_pub,
@@ -947,6 +971,7 @@ fn handle_key_sequence_for_search_page(
                     window::handle_action_for_selected_item(
                         Action::GoToRadio,
                         &tracks,
+                        state,
                         &data,
                         ui,
                         client_pub,
@@ -956,7 +981,9 @@ fn handle_key_sequence_for_search_page(
                     command, client_pub, &tracks, &data, ui, state,
                 ),
                 CommandOrAction::Action(action, ActionTarget::SelectedItem) => {
-                    window::handle_action_for_selected_item(action, &tracks, &data, ui, client_pub)
+                    window::handle_action_for_selected_item(
+                        action, &tracks, state, &data, ui, client_pub,
+                    )
                 }
                 CommandOrAction::Action(..) => Ok(false),
             }
@@ -971,6 +998,7 @@ fn handle_key_sequence_for_search_page(
                     window::handle_action_for_selected_item(
                         Action::GoToRadio,
                         &artists,
+                        state,
                         &data,
                         ui,
                         client_pub,
@@ -980,7 +1008,9 @@ fn handle_key_sequence_for_search_page(
                     window::handle_command_for_artist_list_window(command, &artists, &data, ui),
                 ),
                 CommandOrAction::Action(action, ActionTarget::SelectedItem) => {
-                    window::handle_action_for_selected_item(action, &artists, &data, ui, client_pub)
+                    window::handle_action_for_selected_item(
+                        action, &artists, state, &data, ui, client_pub,
+                    )
                 }
                 CommandOrAction::Action(..) => Ok(false),
             }
@@ -995,6 +1025,7 @@ fn handle_key_sequence_for_search_page(
                     window::handle_action_for_selected_item(
                         Action::GoToRadio,
                         &albums,
+                        state,
                         &data,
                         ui,
                         client_pub,
@@ -1004,7 +1035,9 @@ fn handle_key_sequence_for_search_page(
                     command, &albums, &data, ui, client_pub,
                 ),
                 CommandOrAction::Action(action, ActionTarget::SelectedItem) => {
-                    window::handle_action_for_selected_item(action, &albums, &data, ui, client_pub)
+                    window::handle_action_for_selected_item(
+                        action, &albums, state, &data, ui, client_pub,
+                    )
                 }
                 CommandOrAction::Action(..) => Ok(false),
             }
@@ -1025,6 +1058,7 @@ fn handle_key_sequence_for_search_page(
                     window::handle_action_for_selected_item(
                         Action::GoToRadio,
                         &playlist_refs,
+                        state,
                         &data,
                         ui,
                         client_pub,
@@ -1042,6 +1076,7 @@ fn handle_key_sequence_for_search_page(
                     window::handle_action_for_selected_item(
                         action,
                         &playlist_refs,
+                        state,
                         &data,
                         ui,
                         client_pub,
@@ -1060,6 +1095,7 @@ fn handle_key_sequence_for_search_page(
                     window::handle_action_for_selected_item(
                         Action::GoToRadio,
                         &shows,
+                        state,
                         &data,
                         ui,
                         client_pub,
@@ -1069,7 +1105,9 @@ fn handle_key_sequence_for_search_page(
                     window::handle_command_for_show_list_window(command, &shows, &data, ui),
                 ),
                 CommandOrAction::Action(action, ActionTarget::SelectedItem) => {
-                    window::handle_action_for_selected_item(action, &shows, &data, ui, client_pub)
+                    window::handle_action_for_selected_item(
+                        action, &shows, state, &data, ui, client_pub,
+                    )
                 }
                 CommandOrAction::Action(..) => Ok(false),
             }
@@ -1088,7 +1126,7 @@ fn handle_key_sequence_for_search_page(
                 }
                 CommandOrAction::Action(action, ActionTarget::SelectedItem) => {
                     window::handle_action_for_selected_item(
-                        action, &episodes, &data, ui, client_pub,
+                        action, &episodes, state, &data, ui, client_pub,
                     )
                 }
                 CommandOrAction::Action(..) => Ok(false),
@@ -1180,7 +1218,7 @@ fn handle_action_for_current_context(
         return Ok(false);
     };
     let data = state.data.read();
-    handle_action_in_context(action, context, client_pub, &data, ui)
+    handle_action_in_context(action, context, client_pub, state, &data, ui)
 }
 
 fn handle_action_for_browse_page(
@@ -1192,7 +1230,9 @@ fn handle_action_for_browse_page(
     let data = state.data.read();
 
     match ui.current_page() {
-        PageState::Browse { state } => match state {
+        PageState::Browse {
+            state: browse_state,
+        } => match browse_state {
             BrowsePageUIState::CategoryPlaylistList { category, .. } => {
                 let Some(playlists) = data.browse.category_playlists.get(&category.id) else {
                     return Ok(false);
@@ -1208,6 +1248,7 @@ fn handle_action_for_browse_page(
                     action,
                     playlists[selected].clone().into(),
                     client_pub,
+                    state,
                     &data,
                     ui,
                 )?;

@@ -50,7 +50,7 @@ A sample `app.toml` is available at [examples/app.toml](../examples/app.toml).
 | `enable_notify`                   | Enable notifications (requires `notify` feature).                                              | `true`                                                                 |
 | `enable_cover_image_cache`        | Cache album cover images.                                                                      | `true`                                                                 |
 | `notify_streaming_only`           | Send notifications only when streaming is active (requires `streaming` and `notify` features). | `false`                                                                |
-| `default_device`                  | Default device to connect to on startup.                                                       | `spotify-player`                                                       |
+| `default_device`                  | Preferred device to connect to on startup. Takes precedence over the active device.           | `spotify-player`                                                       |
 | `play_icon`                       | Icon for playing state.                                                                        | `▶`                                                                    |
 | `pause_icon`                      | Icon for paused state.                                                                         | `‖`                                                                    |
 | `liked_icon`                      | Icon for liked songs.                                                                          | `♥`                                                                    |

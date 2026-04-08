@@ -9,6 +9,7 @@ use crate::utils::create_private_file;
 use super::model::{
     Album, Artist, Category, Context, ContextId, Id, Playlist, PlaylistFolderItem,
     PlaylistFolderNode, RecentTrackSeed, RecentTrackSeedSource, SearchResults, Show, Track,
+    TracksId,
 };
 use super::Lyrics;
 
@@ -23,6 +24,7 @@ pub enum FileCacheKey {
     SavedAlbums,
     SavedTracks,
     RecentTrackSeeds,
+    LastRadioSeed,
 }
 
 /// default time-to-live cache duration
@@ -47,6 +49,7 @@ pub struct UserData {
     pub saved_albums: Vec<Album>,
     pub saved_tracks: HashMap<String, Track>,
     pub recent_track_seeds: Vec<RecentTrackSeed>,
+    pub last_radio_tracks_id: Option<TracksId>,
 }
 
 /// the application's in-memory caches
@@ -148,6 +151,10 @@ impl UserData {
                 cache_folder,
             )
             .unwrap_or_default(),
+            last_radio_tracks_id: load_data_from_file_cache(
+                FileCacheKey::LastRadioSeed,
+                cache_folder,
+            ),
         }
     }
 
@@ -205,6 +212,10 @@ impl UserData {
         self.recent_track_seeds
             .insert(0, RecentTrackSeed { track, source });
         self.recent_track_seeds.truncate(RECENT_TRACK_SEED_LIMIT);
+    }
+
+    pub fn set_last_radio_tracks_id(&mut self, tracks_id: TracksId) {
+        self.last_radio_tracks_id = Some(tracks_id);
     }
 }
 
