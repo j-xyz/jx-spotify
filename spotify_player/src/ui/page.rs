@@ -4,7 +4,10 @@ use std::{
 };
 
 use chrono_humanize::HumanTime;
-use ratatui::text::Line;
+use ratatui::{
+    style::Color,
+    text::Line,
+};
 
 use crate::{
     command::Command,
@@ -466,6 +469,11 @@ fn render_search_tui_header(
     ui: &UIStateGuard,
 ) {
     let key = search_tui_key_style(ui);
+    let badge_style = Style::default()
+        .fg(Color::Rgb(0x0f, 0x14, 0x19))
+        .bg(Color::Rgb(0xff, 0x79, 0xc6))
+        .add_modifier(Modifier::BOLD);
+    let badge = "jx-spotify";
     let meta = match mode {
         SearchTuiMode::Global => Line::from(vec![
             Span::styled("global", ui.theme.playlist_desc()),
@@ -488,7 +496,9 @@ fn render_search_tui_header(
             Span::styled(" help", ui.theme.playback_metadata()),
         ]),
     };
-    utils::render_section_header(frame, &ui.theme, rect, "spotify", Some(meta), true);
+    let chunks = Layout::horizontal([Constraint::Length(11), Constraint::Fill(0)]).split(rect);
+    frame.render_widget(Paragraph::new(Span::styled(badge, badge_style)), chunks[0]);
+    frame.render_widget(Paragraph::new(meta).alignment(Alignment::Right), chunks[1]);
 }
 
 fn render_search_tui_search_header(
