@@ -2,9 +2,9 @@ use crate::{command::Command, utils::filtered_items_from_query};
 use crossterm::event::KeyCode;
 
 use super::{
-    config, utils, Cell, Constraint, Frame, Layout, Line, Paragraph, PlaylistCreateCurrentField,
-    PageState, PageType, PlaylistPopupAction, PopupState, Rect, Row, SearchTuiMode, SharedState,
-    Span, Table, UIStateGuard,
+    config, utils, Cell, Constraint, Frame, Layout, Line, PageState, PageType, Paragraph,
+    PlaylistCreateCurrentField, PlaylistPopupAction, PopupState, Rect, Row, SearchTuiMode,
+    SharedState, Span, Table, UIStateGuard,
 };
 
 const SHORTCUT_TABLE_N_COLUMNS: usize = 3;
@@ -71,9 +71,6 @@ pub fn render_popup(
                 let rect = utils::render_panel(frame, &ui.theme, chunks[1], "search", None, true);
                 frame.render_widget(Paragraph::new(format!("/{query}")), rect);
                 (chunks[0], true)
-            }
-            PopupState::SearchTuiHelp { scope, items } => {
-                render_contextual_help_popup(frame, &ui.theme, rect, "search tui", scope, items)
             }
             PopupState::ContextHelp { scope, items } => {
                 render_contextual_help_popup(frame, &ui.theme, rect, "context", scope, items)
@@ -322,9 +319,7 @@ pub fn render_shortcut_help_popup(
             Command::ShowActionsOnCurrentContext | Command::GoToRadioFromCurrentContext => {
                 page_type == PageType::Context
             }
-            Command::ShowActionsOnCurrentTrack | Command::GoToRadioFromCurrentTrack => {
-                has_playback
-            }
+            Command::ShowActionsOnCurrentTrack | Command::GoToRadioFromCurrentTrack => has_playback,
             _ => true,
         })
         .collect::<Vec<_>>();
@@ -399,6 +394,8 @@ fn shortcut_family_title(input: &crate::key::KeySequence) -> &str {
         [crate::key::Key::None(KeyCode::Char('r'))] => "radio",
         [crate::key::Key::None(KeyCode::Char('m'))] => "mode",
         [crate::key::Key::None(KeyCode::Char('a'))] => "actions",
+        [crate::key::Key::None(KeyCode::Char('s'))] => "sorting",
+        [crate::key::Key::None(KeyCode::Char('u'))] => "user",
         _ => "shortcuts",
     }
 }
@@ -413,9 +410,9 @@ fn shortcut_family_context_label(ui: &UIStateGuard) -> String {
             SearchTuiMode::Album { .. } => "search tui / album".to_string(),
             SearchTuiMode::Artist { .. } => "search tui / artist".to_string(),
         },
-        PageState::Context { context_page_type, .. } => {
-            context_page_type.title().to_lowercase()
-        }
+        PageState::Context {
+            context_page_type, ..
+        } => context_page_type.title().to_lowercase(),
         PageState::Browse { .. } => "browse".to_string(),
         PageState::Lyrics { .. } => "lyrics".to_string(),
         PageState::Queue { .. } => "queue".to_string(),

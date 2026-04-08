@@ -11,6 +11,7 @@ use crate::{
 #[cfg(feature = "image")]
 use anyhow::{Context, Result};
 use rspotify::model::Id;
+use std::collections::BTreeSet;
 
 /// Render a playback window showing information about the current playback, which includes
 /// - track title, artists, album
@@ -364,7 +365,6 @@ fn construct_playback_text(
                 }
             },
             "{metadata}" => {
-                let repeat_value = <&'static str>::from(playback.repeat_state).to_string();
                 let volume_value = if let Some(volume) = playback.mute_state {
                     format!("{volume}% (muted)")
                 } else {
@@ -384,42 +384,63 @@ fn construct_playback_text(
                     crate::utils::format_duration(&duration),
                 );
                 let active_value_style = ui.theme.page_desc().add_modifier(Modifier::BOLD);
-                let inactive_value_style = ui.theme.playback_metadata();
+                let muted_value_style = ui.theme.playback_metadata();
                 let label_style = ui.theme.playback_metadata();
 
                 let mut metadata_spans = vec![Span::styled(time_value, active_value_style)];
                 let mut first = false;
+                let mut mode_fields = Vec::new();
+                let mut seen_fields = BTreeSet::new();
 
                 for field in &configs.app_config.playback_metadata_fields {
-                    let (label, value, enabled) = match field.as_str() {
-                        "repeat" => (
-                            "repeat",
-                            repeat_value.clone(),
-                            playback.repeat_state != rspotify::model::RepeatState::Off,
-                        ),
-                        "shuffle" => (
-                            "shuffle",
-                            playback.shuffle_state.to_string(),
-                            playback.shuffle_state,
-                        ),
-                        "volume" => ("volume", volume_value.clone(), true),
-                        "device" => ("device", playback.device_name.clone(), true),
-                        _ => continue,
-                    };
+                    if !seen_fields.insert(field.as_str()) {
+                        continue;
+                    }
 
+                    match field.as_str() {
+                        "repeat" => mode_fields.push((
+                            "repeat".to_string(),
+                            <&'static str>::from(playback.repeat_state).to_string(),
+                            playback.repeat_state != rspotify::model::RepeatState::Off,
+                        )),
+                        "shuffle" => mode_fields.push((
+                            "shuffle".to_string(),
+                            if playback.shuffle_state { "on" } else { "off" }.to_string(),
+                            playback.shuffle_state,
+                        )),
+                        "volume" => {
+                            if !first {
+                                metadata_spans.push(Span::styled(" | ", label_style));
+                            }
+                            first = false;
+                            metadata_spans.push(Span::styled("volume: ", label_style));
+                            metadata_spans
+                                .push(Span::styled(volume_value.clone(), active_value_style));
+                        }
+                        "device" => continue,
+                        _ => continue,
+                    }
+                }
+
+                if !mode_fields.is_empty() {
                     if !first {
                         metadata_spans.push(Span::styled(" | ", label_style));
                     }
-                    first = false;
-                    metadata_spans.push(Span::styled(format!("{label}: "), label_style));
-                    metadata_spans.push(Span::styled(
-                        value,
-                        if enabled {
-                            active_value_style
-                        } else {
-                            inactive_value_style
-                        },
-                    ));
+                    metadata_spans.push(Span::styled("mode: ", label_style));
+                    for (idx, (label, value, enabled)) in mode_fields.into_iter().enumerate() {
+                        if idx > 0 {
+                            metadata_spans.push(Span::styled(" · ", label_style));
+                        }
+                        metadata_spans.push(Span::styled(format!("{label} "), label_style));
+                        metadata_spans.push(Span::styled(
+                            value,
+                            if enabled {
+                                muted_value_style
+                            } else {
+                                muted_value_style.add_modifier(Modifier::DIM)
+                            },
+                        ));
+                    }
                 }
 
                 spans.extend(metadata_spans);

@@ -91,10 +91,9 @@ fn handle_key_sequence_for_search_tui_page(
     state: &SharedState,
     ui: &mut UIStateGuard,
 ) -> Result<bool> {
-    if key_sequence.keys.len() == 1
-        && matches!(key_sequence.keys[0], Key::None(KeyCode::Char('?')))
+    if key_sequence.keys.len() == 1 && matches!(key_sequence.keys[0], Key::None(KeyCode::Char('?')))
     {
-        return open_search_tui_help(ui);
+        return open_command_help_from_search_tui(ui);
     }
 
     if let Some(handled) = handle_search_tui_command_or_action(key_sequence, client_pub, state, ui)?
@@ -172,21 +171,8 @@ fn handle_key_sequence_for_search_tui_page(
     }
 }
 
-fn open_search_tui_help(ui: &mut UIStateGuard) -> Result<bool> {
-    let (scope, items) = match ui.current_page() {
-        PageState::SearchTui { state, .. } => {
-            let scope = match state.mode {
-                SearchTuiMode::Global => "global",
-                SearchTuiMode::Playlist { .. }
-                | SearchTuiMode::Album { .. }
-                | SearchTuiMode::Artist { .. } => "drill-in",
-            };
-            (scope.to_string(), crate::ui::page::search_tui_help_rows())
-        }
-        _ => anyhow::bail!("expect a search tui page"),
-    };
-
-    ui.popup = Some(PopupState::SearchTuiHelp { scope, items });
+fn open_command_help_from_search_tui(ui: &mut UIStateGuard) -> Result<bool> {
+    ui.new_page(PageState::CommandHelp { scroll_offset: 0 });
     Ok(true)
 }
 

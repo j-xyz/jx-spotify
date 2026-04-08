@@ -69,6 +69,7 @@ pub fn construct_list_widget<'a>(
                 })
                 .collect::<Vec<_>>(),
         )
+        .highlight_symbol(highlight_symbol(theme, is_active))
         .highlight_style(theme.selection(is_active)),
         n_items,
     )
@@ -116,6 +117,15 @@ pub fn render_table_window(
 ) {
     adjust_table_state(state, len);
     frame.render_stateful_widget(widget, rect, state);
+}
+
+pub fn highlight_symbol(theme: &config::Theme, is_active: bool) -> Line<'static> {
+    let symbol_style = if is_active {
+        theme.playback_status()
+    } else {
+        Style::default()
+    };
+    Line::from(vec![Span::styled("│ ", symbol_style)])
 }
 
 /// Convert a string to a bidirectional string.

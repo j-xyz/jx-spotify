@@ -16,10 +16,6 @@ pub enum PopupState {
     Search {
         query: String,
     },
-    SearchTuiHelp {
-        scope: String,
-        items: Vec<(String, String)>,
-    },
     ContextHelp {
         scope: String,
         items: Vec<(String, String)>,
@@ -98,10 +94,7 @@ impl PopupState {
             | Self::ArtistList(.., list_state)
             | Self::ThemeList(.., list_state)
             | Self::ActionList(.., list_state) => Some(list_state),
-            Self::Search { .. }
-            | Self::SearchTuiHelp { .. }
-            | Self::ContextHelp { .. }
-            | Self::PlaylistCreate { .. } => None,
+            Self::Search { .. } | Self::ContextHelp { .. } | Self::PlaylistCreate { .. } => None,
         }
     }
 
@@ -116,10 +109,7 @@ impl PopupState {
             | Self::ArtistList(.., list_state)
             | Self::ThemeList(.., list_state)
             | Self::ActionList(.., list_state) => Some(list_state),
-            Self::Search { .. }
-            | Self::SearchTuiHelp { .. }
-            | Self::ContextHelp { .. }
-            | Self::PlaylistCreate { .. } => None,
+            Self::Search { .. } | Self::ContextHelp { .. } | Self::PlaylistCreate { .. } => None,
         }
     }
 

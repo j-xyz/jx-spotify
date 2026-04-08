@@ -9,7 +9,7 @@ use crate::{
 };
 use anyhow::{Context as AnyhowContext, Result};
 use ratatui::{
-    layout::{Alignment, Constraint, Layout, Rect},
+    layout::{Alignment, Constraint, Layout, Margin, Rect},
     style::{Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Cell, List, ListItem, ListState, Paragraph, Row, Table, TableState, Wrap},
@@ -152,10 +152,16 @@ fn clean_up(mut terminal: Terminal) -> Result<()> {
 fn render_application(frame: &mut Frame, state: &SharedState, ui: &mut UIStateGuard, rect: Rect) {
     // rendering order: playback window -> shortcut help popup -> other popups -> main layout
 
+    let content_rect = rect.inner(Margin {
+        vertical: 1,
+        horizontal: 0,
+    });
+    render_app_chrome(frame, ui, rect);
+
     // render playback window before other popups and windows to ensure nothing is rendered on top
     // of the playback window, which is to avoid "duplicated images" issue
     // See: https://github.com/aome510/spotify-player/issues/498
-    let rect = playback::render_playback_window(frame, state, ui, rect);
+    let rect = playback::render_playback_window(frame, state, ui, content_rect);
 
     let rect = popup::render_shortcut_help_popup(frame, state, ui, rect);
 
@@ -184,6 +190,73 @@ fn render_main_layout(
         PageType::CommandHelp => page::render_commands_help_page(frame, state, ui, rect),
         PageType::Logs => page::render_logs_page(frame, state, ui, rect),
     }
+}
+
+fn render_app_chrome(frame: &mut Frame, ui: &UIStateGuard, rect: Rect) {
+    let top = Rect::new(rect.x, rect.y, rect.width, 1);
+    let bottom = Rect::new(rect.x, rect.bottom().saturating_sub(1), rect.width, 1);
+
+    let top_chunks = Layout::horizontal([Constraint::Length(11), Constraint::Fill(0)]).split(top);
+    let badge_style = Style::default()
+        .fg(ratatui::style::Color::Rgb(0x0f, 0x14, 0x19))
+        .bg(ratatui::style::Color::Rgb(0xff, 0x79, 0xc6))
+        .add_modifier(Modifier::BOLD);
+    frame.render_widget(
+        Paragraph::new(Span::styled("jx-spotify", badge_style)),
+        top_chunks[0],
+    );
+    frame.render_widget(
+        Paragraph::new(app_family_spans(ui)).alignment(Alignment::Right),
+        top_chunks[1],
+    );
+
+    let bottom_chunks =
+        Layout::horizontal([Constraint::Length(11), Constraint::Fill(0)]).split(bottom);
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![Span::styled(
+            "playback",
+            ui.theme.playlist_desc(),
+        )])),
+        bottom_chunks[0],
+    );
+    frame.render_widget(
+        Paragraph::new(app_key_hint_spans(ui)).alignment(Alignment::Right),
+        bottom_chunks[1],
+    );
+}
+
+fn app_family_spans(ui: &UIStateGuard) -> Line<'static> {
+    let key = ui.theme.page_desc().add_modifier(Modifier::BOLD);
+    let label = ui.theme.playback_metadata();
+    Line::from(vec![
+        Span::styled("a", key),
+        Span::styled("ction ", label),
+        Span::styled("m", key),
+        Span::styled("ode ", label),
+        Span::styled("r", key),
+        Span::styled("adio ", label),
+        Span::styled("s", key),
+        Span::styled("orting ", label),
+        Span::styled("g", key),
+        Span::styled("o ", label),
+        Span::styled("u", key),
+        Span::styled("ser", label),
+    ])
+}
+
+fn app_key_hint_spans(ui: &UIStateGuard) -> Line<'static> {
+    let key = ui.theme.page_desc().add_modifier(Modifier::BOLD);
+    let label = ui.theme.playback_metadata();
+    Line::from(vec![
+        Span::styled("/", key),
+        Span::styled(" search ", label),
+        Span::styled("?", key),
+        Span::styled(" help ", label),
+        Span::styled("esc", key),
+        Span::styled(" clear ", label),
+        Span::styled("tab", key),
+        Span::styled(" focus", label),
+    ])
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

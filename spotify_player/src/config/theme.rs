@@ -184,7 +184,7 @@ impl Theme {
                 .as_ref()
                 .unwrap_or(
                     &Style::default()
-                        .bg(StyleColor::BrightBlack)
+                        .fg(StyleColor::BrightMagenta)
                         .modifiers([StyleModifier::Bold]),
                 )
                 .style(&self.palette)

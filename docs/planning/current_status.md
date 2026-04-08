@@ -2,6 +2,8 @@
 
 - The help-splitting direction has been reviewed and scoped.
 - Current recommendation: keep the global command help page, then add smaller contextual surfaces starting with SearchTui.
-- Implemented slices: SearchTui now opens a bottom-sheet contextual help popup on `?`, drill-through context pages now open matching page-specific context help with album / playlist / show / artist / current-playing hints, and the existing first-key help families now hide clearly inapplicable current-context/current-track entries off pages where they do not apply.
-- Last verification: `uv run cargo check --manifest-path /Users/jane/jxyz/maeve/projects/jx-spotify/spotify_player/Cargo.toml` passed after tightening the context-help rows and page-aware shortcut family popup.
+- Implemented slices: the app now carries a persistent four-corner shortcut frame, `?` routes to the global help page, playback metadata is more compact, album views drop redundant album columns, radio views use a lighter search-tui-like table, and the shortcut-family popup titles now cover `s` and `u`.
+- Last verification: `cargo check --manifest-path /Users/jane/jxyz/maeve/projects/jx-spotify/spotify_player/Cargo.toml` passed after the restyle pass.
+- Next slice: visual validation in the live TUI and any follow-up spacing or accent cleanup that falls out of that pass.
 - Recent related commit: `eb552eb` (`fix: move spotify badge to global header`).
+- New restyle slice: playback container de-duplication, album/radio table cleanup, and global help family promotion.
