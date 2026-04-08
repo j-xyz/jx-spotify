@@ -438,6 +438,15 @@ impl AppClient {
                 self.retrieve_current_playback(state, true).await?;
             }
             ClientRequest::GetDevices => {
+                let current_device_id = state
+                    .player
+                    .read()
+                    .playback
+                    .as_ref()
+                    .and_then(|playback| playback.device.id.as_deref())
+                    .unwrap_or_default()
+                    .to_string();
+
                 #[allow(unused_mut)]
                 let mut devices: Vec<Device> = self
                     .available_devices()
@@ -465,7 +474,27 @@ impl AppClient {
                     }
                 }
 
-                state.player.write().devices = devices;
+                {
+                    state.player.write().devices = devices;
+                }
+
+                let selected = {
+                    let player = state.player.read();
+                    player
+                        .devices
+                        .iter()
+                        .position(|device| device.id == current_device_id)
+                        .or_else(|| (!player.devices.is_empty()).then_some(0))
+                };
+
+                if let Some(selected) = selected {
+                    let mut ui = state.ui.lock();
+                    if matches!(ui.popup, Some(crate::state::PopupState::DeviceList(_))) {
+                        ui.popup.as_mut().unwrap().list_select(Some(selected));
+                    }
+                }
+
+                state.request_redraw();
             }
             ClientRequest::GetUserPlaylists => {
                 let playlists = self.current_user_playlists().await?;
