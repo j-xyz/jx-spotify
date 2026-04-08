@@ -30,7 +30,7 @@ pub fn render_playback_window(
         frame,
         &ui.theme,
         rect,
-        "playback",
+        "",
         Some(playback_meta_line(ui, &player)),
         true,
     );
@@ -365,11 +365,6 @@ fn construct_playback_text(
                 }
             },
             "{metadata}" => {
-                let volume_value = if let Some(volume) = playback.mute_state {
-                    format!("{volume}% (muted)")
-                } else {
-                    format!("{}%", playback.volume.unwrap_or_default())
-                };
                 let duration = match playable {
                     rspotify::model::PlayableItem::Track(track) => track.duration,
                     rspotify::model::PlayableItem::Episode(episode) => episode.duration,
@@ -388,8 +383,7 @@ fn construct_playback_text(
                 let label_style = ui.theme.playback_metadata();
 
                 let mut metadata_spans = vec![Span::styled(time_value, active_value_style)];
-                let mut first = false;
-                let mut mode_fields = Vec::new();
+                let mut active_fields: Vec<Vec<Span<'static>>> = Vec::new();
                 let mut seen_fields = BTreeSet::new();
 
                 for field in &configs.app_config.playback_metadata_fields {
@@ -398,48 +392,49 @@ fn construct_playback_text(
                     }
 
                     match field.as_str() {
-                        "repeat" => mode_fields.push((
-                            "repeat".to_string(),
-                            <&'static str>::from(playback.repeat_state).to_string(),
-                            playback.repeat_state != rspotify::model::RepeatState::Off,
-                        )),
-                        "shuffle" => mode_fields.push((
-                            "shuffle".to_string(),
-                            if playback.shuffle_state { "on" } else { "off" }.to_string(),
-                            playback.shuffle_state,
-                        )),
+                        "repeat" if playback.repeat_state != rspotify::model::RepeatState::Off => {
+                            active_fields.push(vec![
+                                Span::styled("↻ ", label_style),
+                                Span::styled(
+                                    <&'static str>::from(playback.repeat_state).to_string(),
+                                    muted_value_style,
+                                ),
+                            ]);
+                        }
+                        "shuffle" if playback.shuffle_state => {
+                            active_fields.push(vec![
+                                Span::styled("⇄ ", label_style),
+                                Span::styled("on", muted_value_style),
+                            ]);
+                        }
                         "volume" => {
-                            if !first {
-                                metadata_spans.push(Span::styled(" | ", label_style));
+                            let show_volume = playback.mute_state.is_some()
+                                || playback.volume.unwrap_or(100) != 100;
+                            if show_volume {
+                                let (glyph, volume_value) =
+                                    if let Some(volume) = playback.mute_state {
+                                        ("🔇", format!("{volume}%"))
+                                    } else {
+                                        ("🔊", format!("{}%", playback.volume.unwrap_or_default()))
+                                    };
+                                active_fields.push(vec![
+                                    Span::styled(format!("{glyph} "), label_style),
+                                    Span::styled(volume_value, muted_value_style),
+                                ]);
                             }
-                            first = false;
-                            metadata_spans.push(Span::styled("volume: ", label_style));
-                            metadata_spans
-                                .push(Span::styled(volume_value.clone(), active_value_style));
                         }
                         "device" => continue,
                         _ => continue,
                     }
                 }
 
-                if !mode_fields.is_empty() {
-                    if !first {
-                        metadata_spans.push(Span::styled(" | ", label_style));
-                    }
-                    metadata_spans.push(Span::styled("mode: ", label_style));
-                    for (idx, (label, value, enabled)) in mode_fields.into_iter().enumerate() {
+                if !active_fields.is_empty() {
+                    metadata_spans.push(Span::styled(" | ", label_style));
+                    for (idx, field) in active_fields.into_iter().enumerate() {
                         if idx > 0 {
                             metadata_spans.push(Span::styled(" · ", label_style));
                         }
-                        metadata_spans.push(Span::styled(format!("{label} "), label_style));
-                        metadata_spans.push(Span::styled(
-                            value,
-                            if enabled {
-                                muted_value_style
-                            } else {
-                                muted_value_style.add_modifier(Modifier::DIM)
-                            },
-                        ));
+                        metadata_spans.extend(field);
                     }
                 }
 
@@ -541,5 +536,5 @@ fn estimated_playback_content_height(state: &SharedState, ui: &UIStateGuard) -> 
         .count()
         .max(1);
 
-    Some(playback_format_lines.max(2))
+    Some(playback_format_lines.max(1))
 }

@@ -300,14 +300,11 @@ impl Default for AppConfig {
 
             tracks_playback_limit: 50,
 
-            playback_format: String::from(
-                "{status} {track} • {artists} {liked}\n{album} • {genres}\n{metadata}",
-            ),
+            playback_format: String::from("{status} {track} - {artists} | {album} {metadata}"),
             playback_metadata_fields: vec![
                 "repeat".to_string(),
                 "shuffle".to_string(),
                 "volume".to_string(),
-                "device".to_string(),
             ],
             #[cfg(feature = "notify")]
             notify_format: NotifyFormat {
@@ -411,7 +408,7 @@ impl Default for LayoutConfig {
                 album_percent: 40,
             },
             playback_window_position: Position::Top,
-            playback_window_height: 6,
+            playback_window_height: 2,
         }
     }
 }

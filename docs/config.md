@@ -31,8 +31,8 @@ A sample `app.toml` is available at [examples/app.toml](../examples/app.toml).
 | `client_port`                     | Port for the application's client to handle CLI commands.                                      | `8080`                                                                 |
 | `log_folder`                      | Path to store log files.                                                                       | `None`                                                                 |
 | `tracks_playback_limit`           | Maximum number of tracks in a playback session.                                                | `50`                                                                   |
-| `playback_format`                 | Format string for the playback window.                                                         | `{status} {track} • {artists} {liked}\n{album} • {genres}\n{metadata}` |
-| `playback_metadata_fields`        | Ordered list of metadata fields displayed in the playback UI `{metadata}` placeholder.         | `["repeat", "shuffle", "volume", "device"]`                            |
+| `playback_format`                 | Format string for the playback window.                                                         | `{status} {track} - {artists} | {album} {metadata}`                    |
+| `playback_metadata_fields`        | Ordered list of compact metadata fields displayed in the playback UI `{metadata}` placeholder. | `["repeat", "shuffle", "volume"]`                                      |
 | `notify_format`                   | Notification format (if `notify` feature enabled).                                             | `{ summary = "{track} • {artists}", body = "{album}" }`                |
 | `notify_timeout_in_secs`          | Notification timeout in seconds (if `notify` feature enabled).                                 | `0`                                                                    |
 | `notify_transient`                | Send transient notifications (Linux only, if `notify` feature enabled).                        | `false`                                                                |
@@ -78,6 +78,7 @@ A sample `app.toml` is available at [examples/app.toml](../examples/app.toml).
 - `enable_streaming` accepts `Always`, `Never`, or `DaemonOnly`. For backward compatibility, `true`/`false` are also accepted.
 - `border_type`, `progress_bar_type`, and `progress_bar_position` accept only the values listed in the table above.
 - `explicit_icon` can be set to any Unicode character or an empty string to disable explicit markers.
+- In the compact playback row, repeat/shuffle/volume are shown only when active, the row uses glyphs instead of text labels for those indicators, and `device` is intentionally omitted.
 
 #### Media control
 
@@ -152,7 +153,7 @@ The `[layout]` section configures the UI layout:
 | `library.album_percent`    | Percentage of the album window in the library.       | `40`    |
 | `library.playlist_percent` | Percentage of the playlist window in the library.    | `40`    |
 | `playback_window_position` | Position of the playback window (`Top` or `Bottom`). | `Top`   |
-| `playback_window_height`   | Height of the playback window.                       | `6`     |
+| `playback_window_height`   | Height of the playback window.                       | `2`     |
 
 Example:
 

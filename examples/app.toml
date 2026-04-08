@@ -3,8 +3,8 @@ login_redirect_uri = "http://127.0.0.1:8989/login"
 client_id = "d420a117a32841c2b3474932e49fb54b"
 client_port = 8080
 tracks_playback_limit = 50
-playback_format = "{status} {track} • {artists}\n{album} • {genres}\n{metadata}"
-playback_metadata_fields = ["repeat", "shuffle", "volume", "device"]
+playback_format = "{status} {track} - {artists} | {album} {metadata}"
+playback_metadata_fields = ["repeat", "shuffle", "volume"]
 notify_format = { summary = "{track} • {artists}", body = "{album}" }
 notify_timeout_in_secs = 0
 notify_transient = false
@@ -38,4 +38,4 @@ autoplay = false
 [layout]
 library = { playlist_percent = 40, album_percent = 40 }
 playback_window_position = "Top"
-playback_window_height = 6
+playback_window_height = 2

@@ -212,13 +212,7 @@ fn render_app_chrome(frame: &mut Frame, ui: &UIStateGuard, rect: Rect) {
 
     let bottom_chunks =
         Layout::horizontal([Constraint::Length(11), Constraint::Fill(0)]).split(bottom);
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![Span::styled(
-            "playback",
-            ui.theme.playlist_desc(),
-        )])),
-        bottom_chunks[0],
-    );
+    frame.render_widget(Paragraph::new(""), bottom_chunks[0]);
     frame.render_widget(
         Paragraph::new(app_key_hint_spans(ui)).alignment(Alignment::Right),
         bottom_chunks[1],

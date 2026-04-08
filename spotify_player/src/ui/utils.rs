@@ -36,15 +36,21 @@ pub fn render_section_header<'a>(
     } else {
         theme.playback_metadata()
     };
-    let title_width = title.len() as u16 + 2;
-    let chunks =
-        Layout::horizontal([Constraint::Length(title_width), Constraint::Fill(0)]).split(rect);
-    frame.render_widget(
-        Paragraph::new(Span::styled(title.to_lowercase(), title_style)),
-        chunks[0],
-    );
-    if let Some(meta) = meta {
-        frame.render_widget(Paragraph::new(meta).alignment(Alignment::Right), chunks[1]);
+    if title.is_empty() {
+        if let Some(meta) = meta {
+            frame.render_widget(Paragraph::new(meta).alignment(Alignment::Right), rect);
+        }
+    } else {
+        let title_width = title.len() as u16 + 2;
+        let chunks =
+            Layout::horizontal([Constraint::Length(title_width), Constraint::Fill(0)]).split(rect);
+        frame.render_widget(
+            Paragraph::new(Span::styled(title.to_lowercase(), title_style)),
+            chunks[0],
+        );
+        if let Some(meta) = meta {
+            frame.render_widget(Paragraph::new(meta).alignment(Alignment::Right), chunks[1]);
+        }
     }
 }
 
