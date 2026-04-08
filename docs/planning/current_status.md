@@ -9,4 +9,4 @@
 - New restyle slice: compact now-playing footer, shorter playback window, album/radio table cleanup, global help family promotion, mouse-volume cleanup, and a footer mini-help preview on `?`.
 - Mini-help preview update: the top-right family banner is gone, `?` now reveals a one-line footer preview first, and a second `?` falls through to full help.
 - Footer layout update: the preview row and now-playing row now have separate footer lines, so they no longer fight for the same space.
-- Worksuite handoff slice: `g x g` now maps to `GoExternalGlow`, emits a scoped JSON handoff envelope in the app cache, and launches `jx-glow` with `--handoff-file`; the shortcut-family popup now supports nested families so multi-key paths like `g x g` are discoverable.
+- Worksuite handoff slice: `g x g` now maps to `GoExternalGlow`, emits a scoped JSON handoff envelope in the app cache, passes its path via `JX_GLOW_HANDOFF_FILE` for binary-compatibility, and exits spotify foreground on successful launch so terminal ownership is handed off cleanly; the shortcut-family popup supports nested families so multi-key paths like `g x g` are discoverable.
