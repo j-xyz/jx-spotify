@@ -4,7 +4,7 @@ use crate::{
         Album, Artist, ArtistFocusState, BrowsePageUIState, Context, ContextPageUIState,
         DataReadGuard, Id, LibraryFocusState, MutableWindowState, PageState, PageType,
         PlaybackMetadata, PlaylistCreateCurrentField, PlaylistFolderItem, PlaylistPopupAction,
-        PopupState, SearchFocusState, SharedState, Track, UIStateGuard,
+        PopupState, SearchFocusState, SearchTuiMode, SharedState, Track, UIStateGuard,
     },
 };
 use anyhow::{Context as AnyhowContext, Result};
@@ -21,7 +21,7 @@ use crate::state::ImageRenderInfo;
 
 type Terminal = ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>;
 
-mod page;
+pub(crate) mod page;
 mod playback;
 mod popup;
 pub mod single_line_input;
@@ -157,7 +157,7 @@ fn render_application(frame: &mut Frame, state: &SharedState, ui: &mut UIStateGu
     // See: https://github.com/aome510/spotify-player/issues/498
     let rect = playback::render_playback_window(frame, state, ui, rect);
 
-    let rect = popup::render_shortcut_help_popup(frame, ui, rect);
+    let rect = popup::render_shortcut_help_popup(frame, state, ui, rect);
 
     let (rect, is_active) = popup::render_popup(frame, state, ui, rect);
 

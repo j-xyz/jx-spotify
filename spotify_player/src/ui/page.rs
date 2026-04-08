@@ -13,15 +13,16 @@ use crate::{
     command::Command,
     key::KeySequence,
     search_tui,
-    state::{Episode, SearchTuiFocus, SearchTuiMode},
+    state::{ContextPageType, Episode, SearchTuiFocus, SearchTuiMode},
     utils::format_duration_hms,
 };
 
 use super::{
     config, utils, Album, Alignment, Artist, ArtistFocusState, Block, BrowsePageUIState, Cell,
-    Constraint, Context, ContextPageUIState, DataReadGuard, Frame, Id, Layout, LibraryFocusState,
-    Modifier, MutableWindowState, Orientation, PageState, PageType, Paragraph, PlaylistFolderItem,
-    Rect, Row, SearchFocusState, SharedState, Span, Style, Table, Text, Track, UIStateGuard,
+    Constraint, Context, ContextPageUIState, DataReadGuard, Frame, Id, Layout,
+    LibraryFocusState, Modifier, MutableWindowState, Orientation, PageState, PageType, Paragraph,
+    PlaylistFolderItem, Rect, Row, SearchFocusState, SharedState, Span, Style, Table, Text, Track,
+    UIStateGuard,
 };
 use crate::state::BidiDisplay;
 use crate::ui::utils::to_bidi_string;
@@ -30,7 +31,7 @@ const COMMAND_TABLE_CONSTRAINTS: [Constraint; 2] =
     [Constraint::Percentage(28), Constraint::Percentage(72)];
 
 #[derive(Clone)]
-struct HelpRow {
+pub(crate) struct HelpRow {
     section: &'static str,
     shortcuts: String,
     description: String,
@@ -1143,50 +1144,15 @@ pub fn render_commands_help_page(
         .collect::<Vec<_>>();
 
     if source_page_type == PageType::SearchTui {
-        rows.extend([
-            HelpRow {
+        rows.extend(
+            search_tui_help_rows()
+            .into_iter()
+            .map(|(shortcuts, description)| HelpRow {
                 section: "Search TUI",
-                shortcuts: format_shortcuts(&["tab", "backtab"]),
-                description: "switch between search and results".to_string(),
-            },
-            HelpRow {
-                section: "Search TUI",
-                shortcuts: format_shortcuts(&["enter"]),
-                description: "open selected result or play selected track in a drilled-in list"
-                    .to_string(),
-            },
-            HelpRow {
-                section: "Search TUI",
-                shortcuts: format_shortcuts(&["p"]),
-                description: "play the selected artist, album, or playlist directly".to_string(),
-            },
-            HelpRow {
-                section: "Search TUI",
-                shortcuts: format_shortcuts(&["r s"]),
-                description: "open radio for the selected item".to_string(),
-            },
-            HelpRow {
-                section: "Search TUI",
-                shortcuts: format_shortcuts(&["/"]),
-                description: "move focus to the search field".to_string(),
-            },
-            HelpRow {
-                section: "Search TUI",
-                shortcuts: format_shortcuts(&["esc"]),
-                description: "clear, go back, or switch back to results when search is empty"
-                    .to_string(),
-            },
-            HelpRow {
-                section: "Search TUI",
-                shortcuts: format_shortcuts(&["g i"]),
-                description: "return to a fresh global search view".to_string(),
-            },
-            HelpRow {
-                section: "Search TUI",
-                shortcuts: format_shortcuts(&["Q"]),
-                description: "quit the application".to_string(),
-            },
-        ]);
+                shortcuts,
+                description,
+            }),
+        );
     }
 
     let rows = ui.search_filtered_items(&rows);
@@ -1389,6 +1355,207 @@ fn help_section(command: Command) -> &'static str {
         Command::None => "System",
         #[cfg(feature = "streaming")]
         Command::RestartIntegratedClient => "System",
+    }
+}
+
+pub(crate) fn search_tui_help_rows() -> Vec<(String, String)> {
+    vec![
+        (
+            format_shortcuts(&["tab", "backtab"]),
+            "switch between search and results".to_string(),
+        ),
+        (
+            format_shortcuts(&["enter"]),
+            "open selected result or play selected track in a drilled-in list".to_string(),
+        ),
+        (
+            format_shortcuts(&["p"]),
+            "play the selected artist, album, or playlist directly".to_string(),
+        ),
+        (
+            format_shortcuts(&["r s"]),
+            "open radio for the selected item".to_string(),
+        ),
+        (
+            format_shortcuts(&["/"]),
+            "move focus to the search field".to_string(),
+        ),
+        (
+            format_shortcuts(&["esc"]),
+            "clear, go back, or switch back to results when search is empty".to_string(),
+        ),
+        (
+            format_shortcuts(&["g i"]),
+            "return to a fresh global search view".to_string(),
+        ),
+        (
+            format_shortcuts(&["Q"]),
+            "quit the application".to_string(),
+        ),
+    ]
+}
+
+pub(crate) fn context_help_rows(
+    context_page_type: &ContextPageType,
+    context_state: Option<&ContextPageUIState>,
+) -> Vec<(String, String)> {
+    let mut rows = vec![
+        (
+            format_shortcuts(&["up", "down", "j", "k"]),
+            "move selection in the current pane".to_string(),
+        ),
+        (
+            format_shortcuts(&["enter"]),
+            match context_page_type {
+                ContextPageType::CurrentPlaying => {
+                    "open or start playback from the selected item".to_string()
+                }
+                ContextPageType::Browsing(id) => match id {
+                    crate::state::ContextId::Show(_) => {
+                        "play the selected episode".to_string()
+                    }
+                    crate::state::ContextId::Artist(_) => {
+                        "open the selected item or drill into the next pane".to_string()
+                    }
+                    crate::state::ContextId::Album(_)
+                    | crate::state::ContextId::Playlist(_)
+                    | crate::state::ContextId::Tracks(_) => {
+                        "start playback from the selected item".to_string()
+                    }
+                },
+            },
+        ),
+        (
+            format_shortcuts(&["/"]),
+            "search within the current context".to_string(),
+        ),
+        (
+            format_shortcuts(&["esc"]),
+            "go back or close the current view".to_string(),
+        ),
+        (
+            format_shortcuts(&["?"]),
+            "close this help popup".to_string(),
+        ),
+    ];
+
+    rows.extend(context_page_type_rows(context_page_type, context_state));
+
+    rows
+}
+
+fn context_page_type_rows(
+    context_page_type: &ContextPageType,
+    context_state: Option<&ContextPageUIState>,
+) -> Vec<(String, String)> {
+    match context_page_type {
+        ContextPageType::CurrentPlaying => vec![
+            (
+                format_shortcuts(&["enter"]),
+                "open or play the selected track or episode".to_string(),
+            ),
+            (
+                format_shortcuts(&["r x"]),
+                "start radio from the current context".to_string(),
+            ),
+            (
+                format_shortcuts(&["a x"]),
+                "show actions for the current context".to_string(),
+            ),
+        ],
+        ContextPageType::Browsing(id) => match id {
+            crate::state::ContextId::Show(_) => vec![
+                (
+                    format_shortcuts(&["enter"]),
+                    "play the selected episode".to_string(),
+                ),
+                (
+                    format_shortcuts(&["r x"]),
+                    "start radio from the current show".to_string(),
+                ),
+                (
+                    format_shortcuts(&["a x"]),
+                    "show actions for the current show".to_string(),
+                ),
+            ],
+            crate::state::ContextId::Playlist(_) => vec![
+                (
+                    format_shortcuts(&["enter"]),
+                    "play the selected track".to_string(),
+                ),
+                (
+                    format_shortcuts(&["r x"]),
+                    "start radio from the current playlist".to_string(),
+                ),
+                (
+                    format_shortcuts(&["a x"]),
+                    "show actions for the current playlist".to_string(),
+                ),
+            ],
+            crate::state::ContextId::Album(_) => vec![
+                (
+                    format_shortcuts(&["enter"]),
+                    "play the selected track".to_string(),
+                ),
+                (
+                    format_shortcuts(&["r x"]),
+                    "start radio from the current album".to_string(),
+                ),
+                (
+                    format_shortcuts(&["a x"]),
+                    "show actions for the current album".to_string(),
+                ),
+            ],
+            crate::state::ContextId::Tracks(_) => vec![
+                (
+                    format_shortcuts(&["enter"]),
+                    "open or start playback from the selected track".to_string(),
+                ),
+                (
+                    format_shortcuts(&["r x"]),
+                    "start radio from the current tracks view".to_string(),
+                ),
+                (
+                    format_shortcuts(&["a x"]),
+                    "show actions for the current tracks view".to_string(),
+                ),
+            ],
+            crate::state::ContextId::Artist(_) => {
+                let mut rows = vec![
+                    (
+                        format_shortcuts(&["r x"]),
+                        "start radio from the current artist".to_string(),
+                    ),
+                    (
+                        format_shortcuts(&["a x"]),
+                        "show actions for the current artist".to_string(),
+                    ),
+                ];
+
+                if matches!(context_state, Some(ContextPageUIState::Artist { .. })) {
+                    rows.splice(
+                        0..0,
+                        [
+                            (
+                                format_shortcuts(&["tab", "backtab"]),
+                                "switch between top tracks, albums, and related artists"
+                                    .to_string(),
+                            ),
+                            (
+                                format_shortcuts(&["a s"]),
+                                "show actions for the selected item".to_string(),
+                            ),
+                            (
+                                format_shortcuts(&["r s"]),
+                                "start radio from the selected item".to_string(),
+                            ),
+                        ],
+                    );
+                }
+
+                rows
+            }
+        },
     }
 }
 

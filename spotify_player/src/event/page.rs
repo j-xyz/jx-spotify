@@ -31,6 +31,12 @@ pub fn handle_key_sequence_for_page(
     if page_type == PageType::SearchTui {
         return handle_key_sequence_for_search_tui_page(key_sequence, client_pub, state, ui);
     }
+    if page_type == PageType::Context
+        && key_sequence.keys.len() == 1
+        && matches!(key_sequence.keys[0], Key::None(KeyCode::Char('?')))
+    {
+        return open_context_help(ui);
+    }
 
     match config::get_config()
         .keymap_config
@@ -85,6 +91,12 @@ fn handle_key_sequence_for_search_tui_page(
     state: &SharedState,
     ui: &mut UIStateGuard,
 ) -> Result<bool> {
+    if key_sequence.keys.len() == 1
+        && matches!(key_sequence.keys[0], Key::None(KeyCode::Char('?')))
+    {
+        return open_search_tui_help(ui);
+    }
+
     if let Some(handled) = handle_search_tui_command_or_action(key_sequence, client_pub, state, ui)?
     {
         return Ok(handled);
@@ -158,6 +170,41 @@ fn handle_key_sequence_for_search_tui_page(
     } else {
         Ok(false)
     }
+}
+
+fn open_search_tui_help(ui: &mut UIStateGuard) -> Result<bool> {
+    let (scope, items) = match ui.current_page() {
+        PageState::SearchTui { state, .. } => {
+            let scope = match state.mode {
+                SearchTuiMode::Global => "global",
+                SearchTuiMode::Playlist { .. }
+                | SearchTuiMode::Album { .. }
+                | SearchTuiMode::Artist { .. } => "drill-in",
+            };
+            (scope.to_string(), crate::ui::page::search_tui_help_rows())
+        }
+        _ => anyhow::bail!("expect a search tui page"),
+    };
+
+    ui.popup = Some(PopupState::SearchTuiHelp { scope, items });
+    Ok(true)
+}
+
+fn open_context_help(ui: &mut UIStateGuard) -> Result<bool> {
+    let (scope, items) = match ui.current_page() {
+        PageState::Context {
+            context_page_type,
+            state: context_state,
+            ..
+        } => (
+            context_page_type.title().to_lowercase(),
+            crate::ui::page::context_help_rows(context_page_type, context_state.as_ref()),
+        ),
+        _ => anyhow::bail!("expect a context page"),
+    };
+
+    ui.popup = Some(PopupState::ContextHelp { scope, items });
+    Ok(true)
 }
 
 fn handle_search_tui_command_or_action(

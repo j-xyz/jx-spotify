@@ -3,7 +3,8 @@ use crossterm::event::KeyCode;
 
 use super::{
     config, utils, Cell, Constraint, Frame, Layout, Line, Paragraph, PlaylistCreateCurrentField,
-    PlaylistPopupAction, PopupState, Rect, Row, SharedState, Span, Table, UIStateGuard,
+    PageState, PageType, PlaylistPopupAction, PopupState, Rect, Row, SearchTuiMode, SharedState,
+    Span, Table, UIStateGuard,
 };
 
 const SHORTCUT_TABLE_N_COLUMNS: usize = 3;
@@ -70,6 +71,12 @@ pub fn render_popup(
                 let rect = utils::render_panel(frame, &ui.theme, chunks[1], "search", None, true);
                 frame.render_widget(Paragraph::new(format!("/{query}")), rect);
                 (chunks[0], true)
+            }
+            PopupState::SearchTuiHelp { scope, items } => {
+                render_contextual_help_popup(frame, &ui.theme, rect, "search tui", scope, items)
+            }
+            PopupState::ContextHelp { scope, items } => {
+                render_contextual_help_popup(frame, &ui.theme, rect, "context", scope, items)
             }
             PopupState::ShortcutFamily { title, items, .. } => {
                 let title = title.clone();
@@ -219,6 +226,38 @@ pub fn render_popup(
     }
 }
 
+fn render_contextual_help_popup(
+    frame: &mut Frame,
+    theme: &config::Theme,
+    rect: Rect,
+    title: &str,
+    scope: &str,
+    items: &[(String, String)],
+) -> (Rect, bool) {
+    let height = (items.len() as u16).min(8) + 4;
+    let chunks = Layout::vertical([Constraint::Fill(0), Constraint::Length(height)]).split(rect);
+    let rect = utils::render_panel(
+        frame,
+        theme,
+        chunks[1],
+        title,
+        Some(Line::from(scope.to_string())),
+        true,
+    );
+    let rows = items
+        .iter()
+        .map(|(shortcuts, description)| {
+            Row::new(vec![
+                Cell::from(shortcuts.clone()),
+                Cell::from(description.clone()),
+            ])
+        })
+        .collect::<Vec<_>>();
+    let table = Table::new(rows, [Constraint::Length(16), Constraint::Fill(0)]).column_spacing(2);
+    frame.render_widget(table, rect);
+    (chunks[0], true)
+}
+
 /// A helper function to render a list popup
 fn render_list_popup(
     frame: &mut Frame,
@@ -245,7 +284,12 @@ fn render_list_popup(
 }
 
 /// Render a shortcut help popup to show the available shortcuts based on user's inputs
-pub fn render_shortcut_help_popup(frame: &mut Frame, ui: &mut UIStateGuard, rect: Rect) -> Rect {
+pub fn render_shortcut_help_popup(
+    frame: &mut Frame,
+    state: &SharedState,
+    ui: &mut UIStateGuard,
+    rect: Rect,
+) -> Rect {
     let input = &ui.input_key_sequence;
 
     // get the matches (keymaps) from the current key sequence input,
@@ -270,6 +314,21 @@ pub fn render_shortcut_help_popup(frame: &mut Frame, ui: &mut UIStateGuard, rect
         }
     };
 
+    let page_type = ui.current_page().page_type();
+    let has_playback = state.player.read().current_playback().is_some();
+    let matches = matches
+        .into_iter()
+        .filter(|km| match km.command {
+            Command::ShowActionsOnCurrentContext | Command::GoToRadioFromCurrentContext => {
+                page_type == PageType::Context
+            }
+            Command::ShowActionsOnCurrentTrack | Command::GoToRadioFromCurrentTrack => {
+                has_playback
+            }
+            _ => true,
+        })
+        .collect::<Vec<_>>();
+
     if matches.is_empty() {
         rect
     } else {
@@ -277,7 +336,7 @@ pub fn render_shortcut_help_popup(frame: &mut Frame, ui: &mut UIStateGuard, rect
         let chunks =
             Layout::vertical([Constraint::Fill(0), Constraint::Length(popup_height)]).split(rect);
 
-        let meta = Line::from(vec![
+        let mut meta = vec![
             super::Span::styled(
                 input.display_help(),
                 ui.theme.page_desc().add_modifier(super::Modifier::BOLD),
@@ -286,7 +345,24 @@ pub fn render_shortcut_help_popup(frame: &mut Frame, ui: &mut UIStateGuard, rect
             Span::styled("press second key", ui.theme.playback_metadata()),
             Span::raw("  "),
             Span::styled("esc cancels", ui.theme.playlist_desc()),
-        ]);
+            Span::raw("  "),
+            Span::styled(
+                shortcut_family_context_label(ui),
+                ui.theme.playback_metadata(),
+            ),
+        ];
+        if let Some(playback) = state.player.read().current_playback() {
+            let mode_text = format!(
+                "repeat {:?} shuffle {}",
+                playback.repeat_state,
+                if playback.shuffle_state { "on" } else { "off" }
+            );
+            meta.extend([
+                Span::raw("  "),
+                Span::styled(mode_text, ui.theme.playback_metadata()),
+            ]);
+        }
+        let meta = Line::from(meta);
         let rect = utils::render_panel(
             frame,
             &ui.theme,
@@ -324,5 +400,26 @@ fn shortcut_family_title(input: &crate::key::KeySequence) -> &str {
         [crate::key::Key::None(KeyCode::Char('m'))] => "mode",
         [crate::key::Key::None(KeyCode::Char('a'))] => "actions",
         _ => "shortcuts",
+    }
+}
+
+fn shortcut_family_context_label(ui: &UIStateGuard) -> String {
+    match ui.current_page() {
+        PageState::Library { .. } => "library".to_string(),
+        PageState::Search { .. } => "search".to_string(),
+        PageState::SearchTui { state, .. } => match state.mode {
+            SearchTuiMode::Global => "search tui / global".to_string(),
+            SearchTuiMode::Playlist { .. } => "search tui / playlist".to_string(),
+            SearchTuiMode::Album { .. } => "search tui / album".to_string(),
+            SearchTuiMode::Artist { .. } => "search tui / artist".to_string(),
+        },
+        PageState::Context { context_page_type, .. } => {
+            context_page_type.title().to_lowercase()
+        }
+        PageState::Browse { .. } => "browse".to_string(),
+        PageState::Lyrics { .. } => "lyrics".to_string(),
+        PageState::Queue { .. } => "queue".to_string(),
+        PageState::CommandHelp { .. } => "help".to_string(),
+        PageState::Logs { .. } => "logs".to_string(),
     }
 }

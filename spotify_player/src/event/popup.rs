@@ -52,6 +52,12 @@ pub fn handle_key_sequence_for_popup(
         PopupState::Search { .. } => {
             return handle_key_sequence_for_search_popup(key_sequence, client_pub, state, ui);
         }
+        PopupState::SearchTuiHelp { .. } => {
+            return handle_key_sequence_for_search_tui_help_popup(key_sequence, ui);
+        }
+        PopupState::ContextHelp { .. } => {
+            return handle_key_sequence_for_context_help_popup(key_sequence, ui);
+        }
         PopupState::PlaylistCreate { .. } => {
             return handle_key_sequence_for_create_playlist_popup(key_sequence, client_pub, ui);
         }
@@ -89,6 +95,12 @@ pub fn handle_key_sequence_for_popup(
 
     match ui.popup.as_ref().context("empty popup")? {
         PopupState::Search { .. } => anyhow::bail!("search popup should be handled before"),
+        PopupState::SearchTuiHelp { .. } => {
+            anyhow::bail!("search tui help popup should be handled before")
+        }
+        PopupState::ContextHelp { .. } => {
+            anyhow::bail!("context help popup should be handled before")
+        }
         PopupState::PlaylistCreate { .. } => {
             anyhow::bail!("create playlist popup should be handled before")
         }
@@ -349,6 +361,42 @@ pub fn handle_key_sequence_for_popup(
                 },
             )
         }
+    }
+}
+
+fn handle_key_sequence_for_search_tui_help_popup(
+    key_sequence: &KeySequence,
+    ui: &mut UIStateGuard,
+) -> Result<bool> {
+    if key_sequence.keys.len() != 1 {
+        return Ok(true);
+    }
+
+    match key_sequence.keys[0] {
+        Key::None(crossterm::event::KeyCode::Esc)
+        | Key::None(crossterm::event::KeyCode::Char('?')) => {
+            ui.popup = None;
+            Ok(true)
+        }
+        _ => Ok(true),
+    }
+}
+
+fn handle_key_sequence_for_context_help_popup(
+    key_sequence: &KeySequence,
+    ui: &mut UIStateGuard,
+) -> Result<bool> {
+    if key_sequence.keys.len() != 1 {
+        return Ok(true);
+    }
+
+    match key_sequence.keys[0] {
+        Key::None(crossterm::event::KeyCode::Esc)
+        | Key::None(crossterm::event::KeyCode::Char('?')) => {
+            ui.popup = None;
+            Ok(true)
+        }
+        _ => Ok(true),
     }
 }
 
