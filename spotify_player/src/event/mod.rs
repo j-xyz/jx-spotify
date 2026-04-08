@@ -1025,8 +1025,7 @@ fn launch_external_glow(state: &SharedState) -> Result<()> {
 
     let mut command = std::process::Command::new(&external_command.command);
     command.args(&external_command.args);
-    command.arg("--handoff-file");
-    command.arg(&handoff_path);
+    command.env("JX_GLOW_HANDOFF_FILE", &handoff_path);
     command.spawn().with_context(|| {
         format!(
             "failed to launch external jx-glow command `{}`",
