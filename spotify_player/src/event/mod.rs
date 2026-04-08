@@ -22,7 +22,13 @@ use crate::{
 use crate::utils::map_join;
 use anyhow::{Context as _, Result};
 use crossterm::event::KeyCode;
-use std::time::Instant;
+use serde::Serialize;
+use std::{
+    fs::{self, File},
+    io::Write,
+    path::{Path, PathBuf},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
 
 use clipboard::{execute_copy_command, get_clipboard_content};
 use ratatui::widgets::ListState;
@@ -685,6 +691,9 @@ fn handle_global_command(
         Command::OpenLogs => {
             ui.new_page(PageState::Logs { scroll_offset: 0 });
         }
+        Command::GoExternalGlow => {
+            launch_external_glow(state)?;
+        }
         Command::RefreshPlayback => {
             client_pub.send(ClientRequest::GetCurrentPlayback)?;
         }
@@ -978,4 +987,212 @@ fn handle_global_command(
         _ => return Ok(false),
     }
     Ok(true)
+}
+
+#[derive(Serialize)]
+struct ExternalHandoffEnvelope {
+    version: u8,
+    from: &'static str,
+    to: &'static str,
+    intent: &'static str,
+    created_at: String,
+    return_token: String,
+    payload: ExternalHandoffPayload,
+}
+
+#[derive(Serialize)]
+struct ExternalHandoffPayload {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    now_playing: Option<ExternalNowPlayingPayload>,
+}
+
+#[derive(Serialize)]
+struct ExternalNowPlayingPayload {
+    track_name: String,
+    artist_names: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    album_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    uri: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    progress_ms: Option<i64>,
+}
+
+fn launch_external_glow(state: &SharedState) -> Result<()> {
+    let cache_folder = config::get_config().cache_folder.clone();
+    let handoff_path = write_external_handoff_file(state, &cache_folder)?;
+    let external_command = resolve_external_glow_command()?;
+
+    let mut command = std::process::Command::new(&external_command.command);
+    command.args(&external_command.args);
+    command.arg("--handoff-file");
+    command.arg(&handoff_path);
+    command.spawn().with_context(|| {
+        format!(
+            "failed to launch external jx-glow command `{}`",
+            external_command.command
+        )
+    })?;
+
+    Ok(())
+}
+
+fn resolve_external_glow_command() -> Result<config::Command> {
+    if let Some(command) = config::get_config()
+        .app_config
+        .external_glow_command
+        .clone()
+    {
+        return Ok(command);
+    }
+
+    let glow = which::which("jx-glow")
+        .context("no external glow command configured and `jx-glow` is not installed on PATH")?;
+    Ok(config::Command {
+        command: glow.to_string_lossy().into_owned(),
+        args: vec![],
+    })
+}
+
+fn write_external_handoff_file(state: &SharedState, cache_folder: &Path) -> Result<PathBuf> {
+    let handoff_dir = cache_folder.join("handoffs");
+    fs::create_dir_all(&handoff_dir).with_context(|| {
+        format!(
+            "failed to create handoff directory `{}`",
+            handoff_dir.display()
+        )
+    })?;
+    prune_stale_handoff_files(&handoff_dir);
+
+    let envelope = ExternalHandoffEnvelope {
+        version: 1,
+        from: "jx-spotify",
+        to: "jx-glow",
+        intent: "resume-work",
+        created_at: chrono::Utc::now().to_rfc3339(),
+        return_token: generate_return_token(),
+        payload: ExternalHandoffPayload {
+            now_playing: build_now_playing_payload(state),
+        },
+    };
+
+    let seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+
+    for attempt in 0..8 {
+        let filename = format!(
+            "jx-worksuite-handoff-{}-{}-{}.json",
+            seed,
+            std::process::id(),
+            attempt
+        );
+        let path = handoff_dir.join(filename);
+        let mut file = create_private_handoff_file(&path)?;
+        serde_json::to_writer_pretty(&mut file, &envelope).with_context(|| {
+            format!(
+                "failed to serialize handoff envelope to `{}`",
+                path.display()
+            )
+        })?;
+        file.write_all(b"\n")
+            .context("failed to finalize handoff envelope")?;
+        return Ok(path);
+    }
+
+    anyhow::bail!(
+        "failed to allocate a unique handoff envelope file in `{}`",
+        handoff_dir.display()
+    )
+}
+
+#[cfg(unix)]
+fn create_private_handoff_file(path: &Path) -> Result<File> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+        .with_context(|| format!("failed to create handoff file `{}`", path.display()))
+}
+
+#[cfg(not(unix))]
+fn create_private_handoff_file(path: &Path) -> Result<File> {
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .with_context(|| format!("failed to create handoff file `{}`", path.display()))
+}
+
+fn prune_stale_handoff_files(dir: &Path) {
+    let cutoff = match SystemTime::now().checked_sub(Duration::from_secs(24 * 60 * 60)) {
+        Some(cutoff) => cutoff,
+        None => return,
+    };
+
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|v| v.to_str()) else {
+            continue;
+        };
+        if !name.starts_with("jx-worksuite-handoff-") || !name.ends_with(".json") {
+            continue;
+        }
+
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        let Ok(modified) = metadata.modified() else {
+            continue;
+        };
+        if modified < cutoff {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
+fn build_now_playing_payload(state: &SharedState) -> Option<ExternalNowPlayingPayload> {
+    let player = state.player.read();
+    let progress_ms = player
+        .playback_progress()
+        .map(|progress| progress.num_milliseconds());
+
+    match player.currently_playing() {
+        Some(rspotify::model::PlayableItem::Track(track)) => Some(ExternalNowPlayingPayload {
+            track_name: track.name.clone(),
+            artist_names: track
+                .artists
+                .iter()
+                .map(|artist| artist.name.clone())
+                .collect(),
+            album_name: Some(track.album.name.clone()),
+            uri: track.id.as_ref().map(|id| id.uri()),
+            progress_ms,
+        }),
+        Some(rspotify::model::PlayableItem::Episode(episode)) => Some(ExternalNowPlayingPayload {
+            track_name: episode.name.clone(),
+            artist_names: vec![episode.show.publisher.clone()],
+            album_name: Some(episode.show.name.clone()),
+            uri: Some(episode.id.uri()),
+            progress_ms,
+        }),
+        Some(rspotify::model::PlayableItem::Unknown(_)) | None => None,
+    }
+}
+
+fn generate_return_token() -> String {
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+    format!("{}-{millis}", std::process::id())
 }

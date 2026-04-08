@@ -37,6 +37,7 @@ A sample `app.toml` is available at [examples/app.toml](../examples/app.toml).
 | `notify_timeout_in_secs`          | Notification timeout in seconds (if `notify` feature enabled).                                 | `0`                                                                    |
 | `notify_transient`                | Send transient notifications (Linux only, if `notify` feature enabled).                        | `false`                                                                |
 | `player_event_hook_command`       | Command to execute on player events.                                                           | `None`                                                                 |
+| `external_glow_command`           | Command used by `g x g` to launch `jx-glow` with a handoff envelope.                          | `None` (falls back to `jx-glow` on PATH)                               |
 | `ap_port`                         | Spotify session connection port.                                                               | `None`                                                                 |
 | `proxy`                           | Spotify session connection proxy.                                                              | `None`                                                                 |
 | `theme`                           | Name of the theme to use.                                                                      | `default`                                                              |

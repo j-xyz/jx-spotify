@@ -1261,7 +1261,8 @@ fn help_section(command: Command) -> &'static str {
         | Command::TopTrackPage
         | Command::RecentlyPlayedTrackPage
         | Command::LikedTrackPage
-        | Command::LyricsPage => "Views",
+        | Command::LyricsPage
+        | Command::GoExternalGlow => "Views",
         Command::Search
         | Command::BrowseUserPlaylists
         | Command::BrowseUserFollowedArtists

@@ -3,9 +3,10 @@
 - The help-splitting direction has been reviewed and scoped.
 - Current recommendation: keep the global command help page, then add smaller contextual surfaces starting with SearchTui.
 - Implemented slices: the app now carries a persistent four-corner shortcut frame, `?` routes to the global help page, playback metadata is more compact, album views drop redundant album columns, radio views use a lighter search-tui-like table, and the shortcut-family popup titles now cover `s` and `u`.
-- Last verification: `cargo check --manifest-path /Users/jane/jxyz/maeve/projects/jx-spotify/spotify_player/Cargo.toml` passed after the restyle pass.
+- Last verification: `cargo check --manifest-path /Users/jane/jxyz/maeve/projects/jx-spotify/spotify_player/Cargo.toml` passed after adding worksuite handoff plumbing.
 - Next slice: visual validation in the live TUI and any follow-up spacing or accent cleanup that falls out of that pass.
 - Recent related commit: `eb552eb` (`fix: move spotify badge to global header`).
 - New restyle slice: compact now-playing footer, shorter playback window, album/radio table cleanup, global help family promotion, mouse-volume cleanup, and a footer mini-help preview on `?`.
 - Mini-help preview update: the top-right family banner is gone, `?` now reveals a one-line footer preview first, and a second `?` falls through to full help.
 - Footer layout update: the preview row and now-playing row now have separate footer lines, so they no longer fight for the same space.
+- Worksuite handoff slice: `g x g` now maps to `GoExternalGlow`, emits a scoped JSON handoff envelope in the app cache, and launches `jx-glow` with `--handoff-file`; the shortcut-family popup now supports nested families so multi-key paths like `g x g` are discoverable.

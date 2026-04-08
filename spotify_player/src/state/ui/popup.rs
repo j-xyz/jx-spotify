@@ -1,5 +1,6 @@
 use crate::{
     command,
+    key::KeySequence,
     state::model::{Album, Artist, Episode, EpisodeId, Playlist, Show, Track, TrackId},
     ui::single_line_input::LineInput,
 };
@@ -22,6 +23,8 @@ pub enum PopupState {
     },
     ShortcutFamily {
         title: String,
+        #[allow(dead_code)]
+        prefix: KeySequence,
         items: Vec<ShortcutFamilyItem>,
         list_state: ListState,
     },
@@ -44,6 +47,7 @@ pub struct ShortcutFamilyItem {
     pub trigger: crate::key::KeySequence,
     pub key_sequence: crate::key::KeySequence,
     pub command: command::Command,
+    pub has_children: bool,
 }
 
 #[derive(Debug, Clone)]

@@ -3,44 +3,108 @@ use crate::{command::construct_artist_actions, utils::filtered_items_from_query}
 use anyhow::Context;
 
 pub fn try_open_shortcut_family_popup(key: Key, ui: &mut UIStateGuard) -> bool {
-    let title = match key {
-        Key::None(crossterm::event::KeyCode::Char('g')) => "go to",
-        Key::None(crossterm::event::KeyCode::Char('r')) => "radio",
-        Key::None(crossterm::event::KeyCode::Char('m')) => "mode",
-        Key::None(crossterm::event::KeyCode::Char('a')) => "actions",
-        Key::None(crossterm::event::KeyCode::Char('s')) => "sorting",
-        Key::None(crossterm::event::KeyCode::Char('u')) => "user",
-        _ => return false,
+    let prefix = KeySequence { keys: vec![key] };
+    open_shortcut_family_popup(prefix, ui)
+}
+
+fn open_shortcut_family_popup(prefix: KeySequence, ui: &mut UIStateGuard) -> bool {
+    let title = match shortcut_family_title(&prefix) {
+        Some(title) => title,
+        None => return false,
     };
 
-    let prefix = KeySequence { keys: vec![key] };
-    let items = config::get_config()
-        .keymap_config
-        .find_matched_prefix_keymaps(&prefix)
-        .into_iter()
-        .filter_map(|keymap| {
-            let mut suffix = keymap.clone();
-            suffix.key_sequence.keys.drain(0..1);
-            (suffix.key_sequence.keys.len() == 1 && suffix.command != Command::None).then_some(
-                crate::state::ShortcutFamilyItem {
-                    trigger: suffix.key_sequence,
-                    key_sequence: keymap.key_sequence.clone(),
-                    command: suffix.command,
-                },
-            )
-        })
-        .collect::<Vec<_>>();
+    let items = build_shortcut_family_items(&prefix);
 
     if items.is_empty() {
         return false;
     }
 
     ui.popup = Some(PopupState::ShortcutFamily {
-        title: title.to_string(),
+        title,
+        prefix,
         items,
         list_state: ListState::default(),
     });
     true
+}
+
+fn shortcut_family_title(prefix: &KeySequence) -> Option<String> {
+    let first = *prefix.keys.first()?;
+    let base = match first {
+        Key::None(crossterm::event::KeyCode::Char('g')) => "go to",
+        Key::None(crossterm::event::KeyCode::Char('r')) => "radio",
+        Key::None(crossterm::event::KeyCode::Char('m')) => "mode",
+        Key::None(crossterm::event::KeyCode::Char('a')) => "actions",
+        Key::None(crossterm::event::KeyCode::Char('s')) => "sorting",
+        Key::None(crossterm::event::KeyCode::Char('u')) => "user",
+        _ => return None,
+    };
+
+    if prefix.keys.len() == 1 {
+        return Some(base.to_string());
+    }
+
+    let mut suffix = Vec::new();
+    for key in prefix.keys.iter().skip(1) {
+        suffix.push(key.display_help());
+    }
+    Some(format!("{base} {}", suffix.join(" ")))
+}
+
+fn build_shortcut_family_items(prefix: &KeySequence) -> Vec<crate::state::ShortcutFamilyItem> {
+    let mut items = Vec::new();
+    let prefix_len = prefix.keys.len();
+
+    for keymap in config::get_config()
+        .keymap_config
+        .find_matched_prefix_keymaps(prefix)
+    {
+        if keymap.key_sequence.keys.len() <= prefix_len {
+            continue;
+        }
+
+        let trigger_key = keymap.key_sequence.keys[prefix_len];
+        let trigger = KeySequence {
+            keys: vec![trigger_key],
+        };
+        let is_direct = keymap.key_sequence.keys.len() == prefix_len + 1;
+        let child_prefix = KeySequence {
+            keys: keymap.key_sequence.keys[..prefix_len + 1].to_vec(),
+        };
+
+        if let Some(existing) = items
+            .iter_mut()
+            .find(|item: &&mut crate::state::ShortcutFamilyItem| item.trigger == trigger)
+        {
+            if !is_direct {
+                existing.has_children = true;
+                if existing.command == Command::None {
+                    existing.key_sequence = child_prefix;
+                }
+            } else if existing.command == Command::None {
+                existing.command = keymap.command;
+                existing.key_sequence = keymap.key_sequence.clone();
+            }
+            continue;
+        }
+
+        items.push(crate::state::ShortcutFamilyItem {
+            trigger,
+            key_sequence: if is_direct {
+                keymap.key_sequence.clone()
+            } else {
+                child_prefix
+            },
+            command: if is_direct {
+                keymap.command
+            } else {
+                Command::None
+            },
+            has_children: !is_direct,
+        });
+    }
+
+    items
 }
 
 pub fn handle_key_sequence_for_popup(
@@ -385,8 +449,26 @@ fn handle_key_sequence_for_shortcut_family_popup(
     ui: &mut UIStateGuard,
 ) -> Result<bool> {
     if let Some(entry) = shortcut_family_entry_from_key_sequence(key_sequence, ui) {
+        if entry.has_children {
+            return Ok(open_shortcut_family_popup(entry.key_sequence, ui));
+        }
         ui.popup = None;
         return super::dispatch_key_sequence(&entry.key_sequence, client_pub, state, ui);
+    }
+
+    if key_sequence.keys.len() == 1 {
+        let nested_prefix = match ui.popup.as_ref() {
+            Some(PopupState::ShortcutFamily { prefix, .. }) => {
+                let mut combined = prefix.clone();
+                combined.keys.push(key_sequence.keys[0]);
+                combined
+            }
+            _ => return Ok(false),
+        };
+
+        if open_shortcut_family_popup(nested_prefix, ui) {
+            return Ok(true);
+        }
     }
 
     let Some(command) = config::get_config()

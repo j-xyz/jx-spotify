@@ -94,6 +94,7 @@ pub enum Command {
 
     CreatePlaylist,
     OpenLogs,
+    GoExternalGlow,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -382,6 +383,7 @@ impl Command {
             Self::CreatePlaylist => "create a new playlist",
             Self::VolumeChange { offset: _ } => unreachable!(),
             Self::OpenLogs => "go to the application logs page",
+            Self::GoExternalGlow => "open jx-glow with current playback handoff context",
         }
         .to_string()
     }

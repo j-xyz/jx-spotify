@@ -320,6 +320,10 @@ impl Default for KeymapConfig {
                     key_sequence: "g o".into(),
                     command: Command::OpenLogs,
                 },
+                Keymap {
+                    key_sequence: "g x g".into(),
+                    command: Command::GoExternalGlow,
+                },
             ],
         }
     }

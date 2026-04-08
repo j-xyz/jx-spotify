@@ -80,8 +80,17 @@ pub fn render_popup(
                 let display_items = items
                     .iter()
                     .map(|item| {
+                        let description = if item.has_children {
+                            if item.command == Command::None {
+                                "more".to_string()
+                            } else {
+                                format!("{} + more", item.command.desc())
+                            }
+                        } else {
+                            item.command.desc()
+                        };
                         (
-                            format!("{}  {}", item.trigger.display_help(), item.command.desc()),
+                            format!("{}  {}", item.trigger.display_help(), description),
                             false,
                         )
                     })
