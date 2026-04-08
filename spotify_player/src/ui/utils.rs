@@ -1,6 +1,6 @@
 use super::{
     config, Alignment, Block, Constraint, Frame, Layout, Line, List, ListItem, ListState,
-    Paragraph, Rect, Span, Style, Table, TableState,
+    Modifier, Paragraph, Rect, Span, Style, Table, TableState,
 };
 use unicode_bidi::BidiInfo;
 
@@ -36,11 +36,17 @@ pub fn render_section_header<'a>(
     } else {
         theme.playback_metadata()
     };
-    let title_width = title.len() as u16 + 2;
+    let badge_style = theme.table_header().add_modifier(Modifier::BOLD | Modifier::REVERSED);
+    let badge = "jx-spotify";
+    let title_width = badge.len() as u16 + title.len() as u16 + 3;
     let chunks =
         Layout::horizontal([Constraint::Length(title_width), Constraint::Fill(0)]).split(rect);
     frame.render_widget(
-        Paragraph::new(Span::styled(title.to_lowercase(), title_style)),
+        Paragraph::new(Line::from(vec![
+            Span::styled(badge, badge_style),
+            Span::raw(" "),
+            Span::styled(title.to_lowercase(), title_style),
+        ])),
         chunks[0],
     );
     if let Some(meta) = meta {
