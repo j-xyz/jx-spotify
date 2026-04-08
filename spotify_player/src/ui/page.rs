@@ -1226,6 +1226,14 @@ fn global_help_rows() -> Vec<(String, String)> {
             format_shortcuts(&["/", "?", "esc", "tab"]),
             "core keys: search, help, back, focus".to_string(),
         ),
+        (
+            "!, @, $".to_string(),
+            "sigil grammar: ! album, @ artist, $ song".to_string(),
+        ),
+        (
+            "#, %".to_string(),
+            "reserved sigils for future expansion".to_string(),
+        ),
     ]
 }
 
@@ -1397,6 +1405,16 @@ pub(crate) fn context_help_rows(
             format_shortcuts(&["/"]),
             "search within the current context".to_string(),
         ),
+    ];
+
+    if context_supports_track_sigils(context_page_type, context_state) {
+        rows.push((
+            "!, @, $".to_string(),
+            "search sigils: ! album, @ artist, $ song".to_string(),
+        ));
+    }
+
+    rows.extend([
         (
             format_shortcuts(&["esc"]),
             "go back or close the current view".to_string(),
@@ -1405,11 +1423,31 @@ pub(crate) fn context_help_rows(
             format_shortcuts(&["?"]),
             "close this help popup".to_string(),
         ),
-    ];
+    ]);
 
     rows.extend(context_page_type_rows(context_page_type, context_state));
 
     rows
+}
+
+fn context_supports_track_sigils(
+    context_page_type: &ContextPageType,
+    context_state: Option<&ContextPageUIState>,
+) -> bool {
+    match context_page_type {
+        ContextPageType::CurrentPlaying => false,
+        ContextPageType::Browsing(crate::state::ContextId::Album(_))
+        | ContextPageType::Browsing(crate::state::ContextId::Playlist(_))
+        | ContextPageType::Browsing(crate::state::ContextId::Tracks(_)) => true,
+        ContextPageType::Browsing(crate::state::ContextId::Artist(_)) => matches!(
+            context_state,
+            Some(ContextPageUIState::Artist {
+                focus: ArtistFocusState::TopTracks,
+                ..
+            })
+        ),
+        ContextPageType::Browsing(crate::state::ContextId::Show(_)) => false,
+    }
 }
 
 fn context_page_type_rows(
