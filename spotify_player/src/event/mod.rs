@@ -693,6 +693,7 @@ fn handle_global_command(
         }
         Command::GoExternalGlow => {
             launch_external_glow(state)?;
+            ui.is_running = false;
         }
         Command::RefreshPlayback => {
             client_pub.send(ClientRequest::GetCurrentPlayback)?;
