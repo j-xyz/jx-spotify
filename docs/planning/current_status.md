@@ -20,6 +20,7 @@
 - Last verification: `cargo check --manifest-path /Users/jane/jxyz/maeve/projects/jx-spotify/spotify_player/Cargo.toml` passed after applying the shared split-row layout rule across track-bearing list views.
 - Playback start hardening: when a `StartPlayback` request is issued without an already-active playback device, the client now resolves the preferred available device first and targets playback there instead of relying on a preexisting active device.
 - New planning note: `docs/planning/sigil-entity-grammar-proposal-2026-04.md` captures a staged proposal to promote `@/$/!/#` from Search TUI sigils into a shared navigation, search, and in-list filtering grammar.
-- Sigil grammar decision: the proposal is now accepted in principle, with `g !` and `g #` intentionally deferred until usage reveals clearer semantics.
-- First sigil slice shipped: Search TUI now shows inline sigil hints, and popup search on track-bearing context lists now supports sigil-aware field filtering (`!` title, `@` artist, `$` album) instead of plain whole-row fuzzy matching only.
+- Sigil grammar decision: the proposal is now accepted in principle for search and filtering, while sigil-driven `g` navigation bindings are intentionally deferred until the remapped symbols see real usage.
+- Sigil remap: active sigils now align to `! album`, `@ artist`, and `$ song`; `#` and `%` are intentionally reserved until a clearer real-world meaning emerges.
+- First sigil slice shipped: Search TUI now shows inline sigil hints, and popup search on track-bearing context lists now supports sigil-aware field filtering (`!` album, `@` artist, `$` song) instead of plain whole-row fuzzy matching only.
 - Last verification: `cargo check --manifest-path /Users/jane/jxyz/maeve/projects/jx-spotify/spotify_player/Cargo.toml` passed after adding sigil-aware track filtering and Search TUI sigil hints.

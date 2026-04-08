@@ -249,9 +249,9 @@ impl TrackFieldQuery {
 fn parse_track_filter_token(token: &str) -> Option<(TrackFilterSection, &str)> {
     let (prefix, rest) = token.split_at(1);
     match prefix {
-        "!" => Some((TrackFilterSection::Title, rest)),
+        "!" => Some((TrackFilterSection::Album, rest)),
         "@" => Some((TrackFilterSection::Artist, rest)),
-        "$" => Some((TrackFilterSection::Album, rest)),
+        "$" => Some((TrackFilterSection::Title, rest)),
         _ => None,
     }
 }
@@ -333,7 +333,7 @@ mod tests {
 
     #[test]
     fn parses_track_field_sigils_with_multitoken_fragments() {
-        let query = TrackFieldQuery::parse("quiet @phoebe bridgers $punisher !kyoto");
+        let query = TrackFieldQuery::parse("quiet @phoebe bridgers !punisher $kyoto");
 
         assert_eq!(query.general_terms, vec![String::from("quiet")]);
         assert_eq!(query.artist_terms, vec![String::from("phoebe bridgers")]);
@@ -360,7 +360,30 @@ mod tests {
         );
 
         let tracks = vec![matching.clone(), other];
-        let filtered = filtered_tracks_from_query("@phoebe $punisher", &tracks);
+        let filtered = filtered_tracks_from_query("@phoebe !punisher", &tracks);
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].id, matching.id);
+    }
+
+    #[test]
+    fn remapped_song_sigil_filters_track_titles() {
+        let artist = test_artist("1111111111111111111111", "Phoebe Bridgers");
+        let matching = test_track(
+            "3333333333333333333333",
+            "Kyoto",
+            vec![artist.clone()],
+            None,
+        );
+        let other = test_track(
+            "4444444444444444444444",
+            "Motion Sickness",
+            vec![artist],
+            None,
+        );
+
+        let tracks = vec![matching.clone(), other];
+        let filtered = filtered_tracks_from_query("$kyoto", &tracks);
 
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].id, matching.id);

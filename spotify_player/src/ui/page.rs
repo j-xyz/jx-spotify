@@ -521,10 +521,10 @@ fn render_search_tui_search_header(
 
 fn search_tui_sigil_meta_line(mode: &SearchTuiMode) -> Line<'static> {
     match mode {
-        SearchTuiMode::Global => Line::from("! track  @ artist  $ album  # playlist"),
+        SearchTuiMode::Global => Line::from("! album  @ artist  $ song"),
         SearchTuiMode::Playlist { .. }
         | SearchTuiMode::Album { .. }
-        | SearchTuiMode::Artist { .. } => Line::from("! title  @ artist  $ album"),
+        | SearchTuiMode::Artist { .. } => Line::from("! album  @ artist  $ song"),
     }
 }
 

@@ -2,7 +2,7 @@
 
 Date: April 8, 2026
 
-Status: Accepted direction with deferred `g !` and `g #` navigation semantics
+Status: Accepted direction for search/filter grammar with navigation bindings deferred after remap
 
 ## Decision Under Review
 
@@ -15,9 +15,10 @@ Should `jx-spotify` promote the existing search sigils into a shared entity gram
 The motivating idea is to make the same symbols mean the same entity everywhere:
 
 - `@` artist
-- `$` album
-- `!` track
-- `#` playlist
+- `!` album
+- `$` song
+- `#` reserved for later
+- `%` reserved for later
 
 ## Accepted Scope
 
@@ -26,13 +27,10 @@ Accepted:
 - shared sigils as entity grammar
 - sigil-driven search scoping
 - sigil-driven field filtering in track-bearing lists
-- `g @`
-- `g $`
 
 Deferred:
 
-- `g !` until real usage reveals a stable target meaning
-- `g #` as top-level navigation until it has a clearer semantic home
+- sigil-driven `g` navigation bindings until the remapped symbols have clearer usage patterns
 
 ## Why This Is Interesting
 
@@ -50,10 +48,9 @@ That creates one mental model for three jobs:
 
 Today, `jx-spotify` already supports sigils inside Search TUI parsing:
 
-- `!` track
+- `!` album
 - `@` artist
-- `$` album
-- `#` playlist
+- `$` song
 
 Those sigils already influence:
 
@@ -71,13 +68,12 @@ So the proposal is evolutionary, not greenfield.
 Sigils should become first-class search prefixes in both search surfaces:
 
 - `@phoebe` means artist-first search
-- `$punisher` means album-first search
-- `!kyoto` means track-first search
-- `#ambient` means playlist-first search
+- `!punisher` means album-first search
+- `$kyoto` means song-first search
 
 Recommended behavior:
 
-- preserve existing mixed-query support such as `@phoebe $punisher`
+- preserve existing mixed-query support such as `@phoebe !punisher`
 - keep plain text search working as the default
 - make the UI visibly acknowledge the active sigil filter
 
@@ -96,9 +92,9 @@ Example:
 Suggested list-filter meanings:
 
 - `@name` filters by artist field
-- `$name` filters by album field
-- `!name` filters by track title
-- `#name` filters by playlist name when the current surface is a playlist list
+- `!name` filters by album field
+- `$name` filters by track title
+- `#name` is reserved until `#` has a settled meaning
 
 Important rule:
 
@@ -111,26 +107,16 @@ That keeps the grammar coherent:
 
 ### 3. Top-Level Navigation
 
-Sigils can also become part of the `g` navigation family.
+Sigils may eventually become part of the `g` navigation family, but the remap changes the tradeoffs:
 
-Proposed first pass:
-
-- `g @` go to artist
-- `g $` go to album
-- `g !` go to current track context
-
-`g #` is the least settled and should be treated as provisional.
-
-Possible meanings for `g #`:
-
-- go to playlists search
-- go to a playlists/library page
-- go to the source playlist of the selected item when that relationship is known
+- `g @` still has a natural "go to artist" meaning
+- `g !` now points at albums, which may or may not deserve a direct navigation affordance
+- `g $` now points at songs, which is semantically intuitive but operationally ambiguous
 
 Recommendation:
 
-- do not lock `g #` yet
-- let `@`, `$`, and `!` graduate first
+- treat sigil-driven navigation as a follow-up decision after hands-on use of the remapped search/filter grammar
+- do not lock `g $`, `g !`, `g #`, or `g %` yet
 
 ## Decision Review
 
@@ -159,8 +145,8 @@ Recommended order:
 1. formalize sigils as a documented entity grammar
 2. expose sigil scoping more visibly in Search TUI and the classic search page
 3. add sigil-aware filtering to track-bearing lists
-4. add `g @`, `g $`, and `g !`
-5. decide whether `g #` deserves a real semantic home
+4. observe real usage under the remapped grammar
+5. revisit whether any sigil deserves a direct `g` navigation binding under the remapped grammar
 
 This keeps the strongest parts of the idea and delays the fuzziest one.
 
@@ -179,31 +165,32 @@ If this proposal is accepted, the grammar should follow these rules:
 ### Strong Mappings
 
 - `@` artist
-- `$` album
-- `!` track
+- `!` album
+- `$` song
 
 These feel semantically strong enough to use broadly.
 
 ### Weak Mapping
 
-- `#` playlist
+- `#` reserved
+- `%` reserved
 
-This is still probably worth keeping in search because it already exists and is memorable enough there, but it should not yet be assumed to support every navigation scenario.
+These should not yet be assumed to support search or navigation semantics until real usage suggests a stable meaning.
 
 ## Open Questions
 
-### What Should `g !` Mean Exactly?
+### Which, If Any, Sigils Deserve Direct `g` Navigation?
 
-There are at least three plausible meanings:
+There are at least three open questions now:
 
-- open the current playback context page
-- jump to the current track inside the current context
-- open a track-focused page for the currently playing song
+- should `g @` become "go to artist" for the selected/current item
+- should `g !` become "go to album" for the selected/current item
+- should `g $` map to any direct navigation at all, given that "song" is more action-oriented than context-oriented
 
 Recommendation:
 
-- define `g !` as "go to current track context" only if that meaning can be made concrete and stable
-- otherwise prefer a more explicit command for current playback and reserve `!` for track search/filter semantics
+- let the remapped grammar prove itself in search and filtering first
+- then decide which sigils merit direct navigation bindings
 
 ### Should Search And Filter Share Exact Parsing Rules?
 
@@ -244,7 +231,7 @@ Likely slices:
 1. document the grammar and expose it in help text
 2. bring the same sigil parsing to the classic search page
 3. extend list filtering to inspect sigil-prefixed field queries
-4. add navigation commands for the accepted sigils
+4. revisit navigation commands after the remapped grammar has real usage
 
 ## Recommendation
 
@@ -255,8 +242,6 @@ Recommended acceptance scope:
 - yes to shared sigils as entity grammar
 - yes to sigil-driven search scoping
 - yes to sigil-driven field filtering in track-bearing lists
-- yes to `g @` and `g $`
-- cautious yes to `g !`, pending exact target semantics
-- no immediate commitment on `g #` beyond search
+- no immediate commitment on sigil-driven `g` navigation under the remapped grammar
 
 That preserves the fire in the idea without forcing the weakest symbol to define the whole system too early.

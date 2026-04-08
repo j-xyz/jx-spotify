@@ -252,7 +252,7 @@ fn search_popup_meta(ui: &UIStateGuard) -> Option<Line<'static>> {
         | PageState::Context {
             state: Some(crate::state::ContextPageUIState::Tracks { .. }),
             ..
-        } => Some(Line::from("! title  @ artist  $ album")),
+        } => Some(Line::from("! album  @ artist  $ song")),
         PageState::Context {
             state:
                 Some(crate::state::ContextPageUIState::Artist {
@@ -260,7 +260,7 @@ fn search_popup_meta(ui: &UIStateGuard) -> Option<Line<'static>> {
                     ..
                 }),
             ..
-        } => Some(Line::from("! title  @ artist  $ album")),
+        } => Some(Line::from("! album  @ artist  $ song")),
         _ => None,
     }
 }

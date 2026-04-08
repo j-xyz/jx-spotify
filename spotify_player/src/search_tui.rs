@@ -567,10 +567,9 @@ fn context_tracks<'a>(data: &'a DataReadGuard, mode: &SearchTuiMode) -> Option<&
 fn parse_sigil_token(token: &str) -> Option<(SearchTuiItemKind, &str)> {
     let (prefix, rest) = token.split_at(1);
     match prefix {
-        "!" => Some((SearchTuiItemKind::Track, rest)),
+        "!" => Some((SearchTuiItemKind::Album, rest)),
         "@" => Some((SearchTuiItemKind::Artist, rest)),
-        "$" => Some((SearchTuiItemKind::Album, rest)),
-        "#" => Some((SearchTuiItemKind::Playlist, rest)),
+        "$" => Some((SearchTuiItemKind::Track, rest)),
         _ => None,
     }
 }
@@ -707,7 +706,7 @@ mod tests {
 
     #[test]
     fn parses_sigils_as_type_filters_with_embedded_terms() {
-        let query = SearchTuiQuery::parse("quiet !phoebe @bridgers $punisher #mix");
+        let query = SearchTuiQuery::parse("quiet !phoebe @bridgers $punisher");
 
         assert_eq!(
             query.general_terms,
@@ -716,23 +715,21 @@ mod tests {
                 String::from("phoebe"),
                 String::from("bridgers"),
                 String::from("punisher"),
-                String::from("mix"),
             ]
         );
         assert_eq!(
             query.type_filters,
             vec![
-                SearchTuiItemKind::Track,
-                SearchTuiItemKind::Artist,
                 SearchTuiItemKind::Album,
-                SearchTuiItemKind::Playlist,
+                SearchTuiItemKind::Artist,
+                SearchTuiItemKind::Track,
             ]
         );
     }
 
     #[test]
     fn trailing_sigil_sets_type_filter_without_losing_existing_terms() {
-        let query = SearchTuiQuery::parse("halsey $");
+        let query = SearchTuiQuery::parse("halsey !");
 
         assert_eq!(query.general_terms, vec![String::from("halsey")]);
         assert_eq!(query.type_filters, vec![SearchTuiItemKind::Album]);
@@ -740,9 +737,9 @@ mod tests {
 
     #[test]
     fn remote_candidate_query_uses_plain_terms_only() {
-        let query = remote_candidate_query(&SearchTuiMode::Global, "!quiet @phoebe $punisher #mix");
+        let query = remote_candidate_query(&SearchTuiMode::Global, "!quiet @phoebe $punisher");
 
-        assert_eq!(query, Some(String::from("quiet phoebe punisher mix")));
+        assert_eq!(query, Some(String::from("quiet phoebe punisher")));
     }
 
     #[test]
@@ -846,6 +843,55 @@ mod tests {
         assert!(matches!(
             &results.items[0],
             SearchTuiItem::Artist { artist: item_artist } if item_artist.id == artist.id
+        ));
+    }
+
+    #[test]
+    fn remapped_song_sigil_filters_tracks_in_local_fallback() {
+        let mut data = test_app_data();
+        let artist = test_artist("1111111111111111111111", "Phoebe Bridgers");
+        let album = test_album("2222222222222222222222", "Punisher", vec![artist.clone()]);
+        let track = test_track("3333333333333333333333", "Kyoto", vec![artist], Some(album));
+        data.user_data
+            .saved_tracks
+            .insert(track.id.uri(), track.clone());
+        data.caches.search.insert(
+            "kyoto".to_string(),
+            SearchResults::default(),
+            *TTL_CACHE_DURATION,
+        );
+
+        let data = parking_lot::RwLock::new(data);
+        let results = build_items(&data.read(), &SearchTuiMode::Global, "$kyoto");
+
+        assert_eq!(results.source, SearchTuiResultsSource::LocalFallback);
+        assert_eq!(results.items.len(), 1);
+        assert!(matches!(
+            &results.items[0],
+            SearchTuiItem::Track { track: item_track } if item_track.id == track.id
+        ));
+    }
+
+    #[test]
+    fn remapped_album_sigil_filters_albums_in_local_fallback() {
+        let mut data = test_app_data();
+        let artist = test_artist("1111111111111111111111", "Phoebe Bridgers");
+        let album = test_album("2222222222222222222222", "Punisher", vec![artist]);
+        data.user_data.saved_albums.push(album.clone());
+        data.caches.search.insert(
+            "punisher".to_string(),
+            SearchResults::default(),
+            *TTL_CACHE_DURATION,
+        );
+
+        let data = parking_lot::RwLock::new(data);
+        let results = build_items(&data.read(), &SearchTuiMode::Global, "!punisher");
+
+        assert_eq!(results.source, SearchTuiResultsSource::LocalFallback);
+        assert_eq!(results.items.len(), 1);
+        assert!(matches!(
+            &results.items[0],
+            SearchTuiItem::Album { album: item_album } if item_album.id == album.id
         ));
     }
 
