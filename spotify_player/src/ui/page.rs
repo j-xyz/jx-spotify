@@ -25,7 +25,108 @@ use crate::ui::utils::to_bidi_string;
 const COMMAND_TABLE_CONSTRAINTS: [Constraint; 2] =
     [Constraint::Percentage(28), Constraint::Percentage(72)];
 const SPLIT_ROW_MIN_RIGHT_WIDTH: u16 = 12;
-const SPLIT_ROW_MAX_RIGHT_WIDTH: u16 = 36;
+const SPLIT_ROW_RESERVED_LEFT_WIDTH: u16 = 10;
+
+#[derive(Clone, Debug)]
+struct SplitRowRightMeta {
+    leading: Option<String>,
+    trailing: String,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SplitRowRightLayout {
+    total_width: u16,
+    trailing_width: u16,
+}
+
+impl SplitRowRightMeta {
+    fn plain<T>(trailing: T) -> Self
+    where
+        T: Into<String>,
+    {
+        Self {
+            leading: None,
+            trailing: trailing.into(),
+        }
+    }
+
+    fn pair<L, T>(leading: L, trailing: T) -> Self
+    where
+        L: Into<String>,
+        T: Into<String>,
+    {
+        let leading = leading.into();
+        if leading.is_empty() {
+            return Self::plain(trailing);
+        }
+
+        Self {
+            leading: Some(leading),
+            trailing: trailing.into(),
+        }
+    }
+
+    fn display_width(&self) -> u16 {
+        let trailing_width = self.trailing.chars().count() as u16;
+        match &self.leading {
+            Some(leading) if !leading.is_empty() => {
+                leading.chars().count() as u16 + 1 + trailing_width
+            }
+            _ => trailing_width,
+        }
+    }
+
+    fn trailing_width(&self) -> u16 {
+        self.trailing.chars().count() as u16
+    }
+
+    fn render(&self, layout: SplitRowRightLayout) -> String {
+        let total_width = usize::from(layout.total_width);
+        if total_width == 0 {
+            return String::new();
+        }
+
+        match &self.leading {
+            Some(leading)
+                if !leading.is_empty()
+                    && layout.trailing_width > 0
+                    && layout.total_width > layout.trailing_width + 1 =>
+            {
+                let leading_width =
+                    usize::from(layout.total_width.saturating_sub(layout.trailing_width + 1));
+                let trailing_width = usize::from(layout.trailing_width);
+                let leading = truncate_for_width(leading, leading_width);
+                format!(
+                    "{leading:>leading_width$} {trailing:<trailing_width$}",
+                    trailing = self.trailing,
+                )
+            }
+            _ => format!(
+                "{:>total_width$}",
+                truncate_for_width(&self.trailing, total_width)
+            ),
+        }
+    }
+}
+
+fn truncate_for_width(value: &str, width: usize) -> String {
+    let value_width = value.chars().count();
+    if value_width <= width {
+        return value.to_string();
+    }
+
+    if width == 0 {
+        return String::new();
+    }
+
+    if width <= 3 {
+        return ".".repeat(width);
+    }
+
+    let keep = width - 3;
+    let prefix = value.chars().take(keep).collect::<String>();
+    format!("{prefix}...")
+}
 
 #[derive(Clone)]
 pub(crate) struct HelpRow {
@@ -44,19 +145,34 @@ impl Display for HelpRow {
     }
 }
 
-fn split_row_right_width(values: &[String], rect: Rect) -> u16 {
-    let max_allowed = rect.width.saturating_sub(10).min(SPLIT_ROW_MAX_RIGHT_WIDTH);
+fn split_row_right_layout(values: &[SplitRowRightMeta], rect: Rect) -> SplitRowRightLayout {
+    let max_allowed = rect.width.saturating_sub(SPLIT_ROW_RESERVED_LEFT_WIDTH);
     if max_allowed == 0 {
-        return 0;
+        return SplitRowRightLayout {
+            total_width: 0,
+            trailing_width: 0,
+        };
     }
 
     let min_allowed = SPLIT_ROW_MIN_RIGHT_WIDTH.min(max_allowed);
     let max_content = values
         .iter()
-        .map(|value| value.chars().count() as u16)
+        .map(SplitRowRightMeta::display_width)
         .max()
         .unwrap_or(min_allowed);
-    max_content.clamp(min_allowed, max_allowed)
+    let total_width = max_content.clamp(min_allowed, max_allowed);
+    let trailing_width = values
+        .iter()
+        .filter(|value| value.leading.is_some())
+        .map(SplitRowRightMeta::trailing_width)
+        .max()
+        .unwrap_or(0)
+        .min(total_width.saturating_sub(1));
+
+    SplitRowRightLayout {
+        total_width,
+        trailing_width,
+    }
 }
 
 fn track_left_line(track: &Track, ui: &UIStateGuard, is_current: bool) -> Line<'static> {
@@ -78,14 +194,14 @@ fn track_left_line(track: &Track, ui: &UIStateGuard, is_current: bool) -> Line<'
     ])
 }
 
-fn track_right_meta(track: &Track, include_album: bool) -> String {
+fn track_right_meta(track: &Track, include_album: bool) -> SplitRowRightMeta {
     let duration =
         format_duration_hms(&chrono::Duration::from_std(track.duration).unwrap_or_default());
     let album = track.album_info();
     if include_album && !album.is_empty() {
-        format!("{} {}", to_bidi_string(&album), duration)
+        SplitRowRightMeta::pair(to_bidi_string(&album), duration)
     } else {
-        duration
+        SplitRowRightMeta::plain(duration)
     }
 }
 
@@ -299,7 +415,7 @@ pub fn render_search_page(
         .iter()
         .map(|track| track_right_meta(track, true))
         .collect::<Vec<_>>();
-    let track_right_width = split_row_right_width(&track_right_meta, track_rect);
+    let track_right_layout = split_row_right_layout(&track_right_meta, track_rect);
     let track_rows = search_tracks
         .iter()
         .zip(track_right_meta)
@@ -313,7 +429,7 @@ pub fn render_search_page(
                     Cell::from("")
                 },
                 Cell::from(track_left_line(track, ui, is_current)),
-                Cell::from(right_meta).style(ui.theme.playlist_desc()),
+                Cell::from(right_meta.render(track_right_layout)).style(ui.theme.playlist_desc()),
             ])
             .style(Style::default())
         })
@@ -323,7 +439,7 @@ pub fn render_search_page(
         [
             Constraint::Length(config::get_config().app_config.liked_icon.chars().count() as u16),
             Constraint::Fill(1),
-            Constraint::Length(track_right_width),
+            Constraint::Length(track_right_layout.total_width),
         ],
     )
     .column_spacing(1)
@@ -542,7 +658,7 @@ fn render_search_tui_results(
         .iter()
         .map(|row| row.right_meta.clone())
         .collect::<Vec<_>>();
-    let right_width = split_row_right_width(&right_meta_values, rect);
+    let right_layout = split_row_right_layout(&right_meta_values, rect);
     let rows = items
         .into_iter()
         .map(|row| {
@@ -559,26 +675,32 @@ fn render_search_tui_results(
             let left = vec![Span::styled(to_bidi_string(&row.title), title_style)];
             Row::new(vec![
                 Cell::from(Line::from(left)),
-                Cell::from(row.right_meta)
+                Cell::from(row.right_meta.render(right_layout))
                     .style(ui.theme.playlist_desc().add_modifier(Modifier::ITALIC)),
             ])
         })
         .collect::<Vec<_>>();
     let len = rows.len();
-    let table = Table::new(rows, [Constraint::Fill(1), Constraint::Length(right_width)])
-        .column_spacing(1)
-        .highlight_symbol(utils::highlight_symbol(
-            &ui.theme,
-            is_active && focus == SearchTuiFocus::Results,
-        ))
-        .row_highlight_style(if is_active && focus == SearchTuiFocus::Results {
-            ui.theme
-                .app()
-                .patch(ui.theme.playback_progress_bar_unfilled())
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default()
-        });
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Fill(1),
+            Constraint::Length(right_layout.total_width),
+        ],
+    )
+    .column_spacing(1)
+    .highlight_symbol(utils::highlight_symbol(
+        &ui.theme,
+        is_active && focus == SearchTuiFocus::Results,
+    ))
+    .row_highlight_style(if is_active && focus == SearchTuiFocus::Results {
+        ui.theme
+            .app()
+            .patch(ui.theme.playback_progress_bar_unfilled())
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    });
 
     let PageState::SearchTui {
         state: page_state, ..
@@ -592,7 +714,7 @@ fn render_search_tui_results(
 #[derive(Debug)]
 struct SearchTuiDisplayRow {
     title: String,
-    right_meta: String,
+    right_meta: SplitRowRightMeta,
     is_current: bool,
     playlist_title_bold: bool,
 }
@@ -608,9 +730,9 @@ impl From<search_tui::SearchTuiItem> for SearchTuiDisplayRow {
                 Self {
                     title: format!("{} - {}", track.display_name(), track.artists_info()),
                     right_meta: if album.is_empty() {
-                        duration
+                        SplitRowRightMeta::plain(duration)
                     } else {
-                        format!("{} {}", to_bidi_string(&album), duration)
+                        SplitRowRightMeta::pair(to_bidi_string(&album), duration)
                     },
                     is_current: false,
                     playlist_title_bold: false,
@@ -618,7 +740,7 @@ impl From<search_tui::SearchTuiItem> for SearchTuiDisplayRow {
             }
             search_tui::SearchTuiItem::Artist { artist } => Self {
                 title: artist.name,
-                right_meta: "artist".to_string(),
+                right_meta: SplitRowRightMeta::plain("artist"),
                 is_current: false,
                 playlist_title_bold: false,
             },
@@ -633,13 +755,13 @@ impl From<search_tui::SearchTuiItem> for SearchTuiDisplayRow {
                         .collect::<Vec<_>>()
                         .join(", ")
                 ),
-                right_meta: format!("album {}", album.year()),
+                right_meta: SplitRowRightMeta::plain(format!("album {}", album.year())),
                 is_current: false,
                 playlist_title_bold: false,
             },
             search_tui::SearchTuiItem::Playlist { playlist } => Self {
                 title: playlist.name,
-                right_meta: format!("playlist {}", playlist.owner.0),
+                right_meta: SplitRowRightMeta::plain(format!("playlist {}", playlist.owner.0)),
                 is_current: false,
                 playlist_title_bold: true,
             },
@@ -654,9 +776,9 @@ fn search_tui_playlist_row(track: Track) -> SearchTuiDisplayRow {
     SearchTuiDisplayRow {
         title: format!("{} - {}", track.display_name(), track.artists_info()),
         right_meta: if album.is_empty() {
-            duration
+            SplitRowRightMeta::plain(duration)
         } else {
-            format!("{} {}", to_bidi_string(&album), duration)
+            SplitRowRightMeta::pair(to_bidi_string(&album), duration)
         },
         is_current: false,
         playlist_title_bold: false,
@@ -1529,6 +1651,54 @@ fn format_shortcuts(shortcuts: &[&str]) -> String {
         .join(", ")
 }
 
+#[cfg(test)]
+mod tests {
+    use super::{split_row_right_layout, Rect, SplitRowRightLayout, SplitRowRightMeta};
+
+    #[test]
+    fn right_meta_layout_expands_when_row_has_room() {
+        let values = vec![SplitRowRightMeta::pair("a very long album name", "5m 8s")];
+        let layout = split_row_right_layout(
+            &values,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 80,
+                height: 1,
+            },
+        );
+
+        assert_eq!(layout.total_width, values[0].display_width());
+    }
+
+    #[test]
+    fn paired_right_meta_aligns_album_against_duration() {
+        let layout = SplitRowRightLayout {
+            total_width: 28,
+            trailing_width: 5,
+        };
+
+        let short = SplitRowRightMeta::pair("an album name", "3m 2s").render(layout);
+        let long = SplitRowRightMeta::pair("a very long album name", "5m 8s").render(layout);
+
+        assert_eq!(short.find("3m 2s"), long.find("5m 8s"));
+    }
+
+    #[test]
+    fn paired_right_meta_truncates_album_to_keep_duration_visible() {
+        let layout = SplitRowRightLayout {
+            total_width: 24,
+            trailing_width: 5,
+        };
+
+        let rendered = SplitRowRightMeta::pair("a very long album name", "5m 8s").render(layout);
+
+        assert_eq!(rendered.chars().count(), 24);
+        assert!(rendered.ends_with("5m 8s"));
+        assert!(rendered.contains("..."));
+    }
+}
+
 pub fn render_queue_page(
     frame: &mut Frame,
     state: &SharedState,
@@ -1614,13 +1784,13 @@ pub fn render_queue_page(
             let album = get_playable_album(item);
             let duration = get_playable_duration(item);
             if album.is_empty() {
-                duration
+                SplitRowRightMeta::plain(duration)
             } else {
-                format!("{} {}", to_bidi_string(&album), duration)
+                SplitRowRightMeta::pair(to_bidi_string(&album), duration)
             }
         })
         .collect::<Vec<_>>();
-    let queue_right_width = split_row_right_width(&queue_right_meta, rect);
+    let queue_right_layout = split_row_right_layout(&queue_right_meta, rect);
     let queue_table = Table::new(
         queue_items
             .into_iter()
@@ -1637,7 +1807,8 @@ pub fn render_queue_page(
                 ]);
                 Row::new(vec![
                     Cell::from(left),
-                    Cell::from(right_meta).style(ui.theme.playlist_desc()),
+                    Cell::from(right_meta.render(queue_right_layout))
+                        .style(ui.theme.playlist_desc()),
                 ])
                 .style(if (i + scroll_offset) % 2 == 0 {
                     ui.theme.secondary_row()
@@ -1646,7 +1817,10 @@ pub fn render_queue_page(
                 })
             })
             .collect::<Vec<_>>(),
-        [Constraint::Fill(1), Constraint::Length(queue_right_width)],
+        [
+            Constraint::Fill(1),
+            Constraint::Length(queue_right_layout.total_width),
+        ],
     )
     .column_spacing(1);
 
@@ -1837,7 +2011,7 @@ fn render_track_table(
         .iter()
         .map(|track| track_right_meta(track, include_album_meta))
         .collect::<Vec<_>>();
-    let right_width = split_row_right_width(&right_meta, rect);
+    let right_layout = split_row_right_layout(&right_meta, rect);
     let rows = tracks
         .into_iter()
         .zip(right_meta)
@@ -1860,7 +2034,7 @@ fn render_track_table(
                     Cell::from("")
                 },
                 Cell::from(track_left_line(track, ui, is_current)),
-                Cell::from(right_meta).style(right_style),
+                Cell::from(right_meta.render(right_layout)).style(right_style),
             ])
             .style(row_style)
         })
@@ -1871,7 +2045,7 @@ fn render_track_table(
         [
             Constraint::Length(configs.app_config.liked_icon.chars().count() as u16),
             Constraint::Fill(1),
-            Constraint::Length(right_width),
+            Constraint::Length(right_layout.total_width),
         ],
     )
     .column_spacing(1)
