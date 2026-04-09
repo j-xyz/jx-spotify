@@ -1,8 +1,12 @@
-use crate::{command::Command, utils::filtered_items_from_query};
+use crate::{
+    command::Command,
+    state::{ContextId, ContextPageType},
+    utils::filtered_items_from_query,
+};
 use crossterm::event::KeyCode;
 
 use super::{
-    config, utils, Cell, Constraint, Frame, Layout, Line, PageState, PageType, Paragraph,
+    config, utils, Cell, Constraint, Frame, Layout, Line, PageState, Paragraph,
     PlaylistCreateCurrentField, PlaylistPopupAction, PopupState, Rect, Row, SearchTuiMode,
     SharedState, Span, Table, UIStateGuard,
 };
@@ -353,15 +357,27 @@ pub fn render_shortcut_help_popup(
         }
     };
 
-    let page_type = ui.current_page().page_type();
-    let has_playback = state.player.read().current_playback().is_some();
+    let player = state.player.read();
     let matches = matches
         .into_iter()
         .filter(|km| match km.command {
             Command::ShowActionsOnCurrentContext | Command::GoToRadioFromCurrentContext => {
-                page_type == PageType::Context
+                matches!(
+                    ui.current_page(),
+                    PageState::Context {
+                        id: Some(_),
+                        context_page_type: ContextPageType::Browsing(
+                            ContextId::Playlist(_)
+                                | ContextId::Album(_)
+                                | ContextId::Artist(_)
+                                | ContextId::Show(_)
+                        ),
+                        ..
+                    }
+                )
             }
-            Command::ShowActionsOnCurrentTrack | Command::GoToRadioFromCurrentTrack => has_playback,
+            Command::ShowActionsOnCurrentTrack => player.currently_playing().is_some(),
+            Command::GoToRadioFromCurrentTrack => player.current_item_supports_radio(),
             _ => true,
         })
         .collect::<Vec<_>>();

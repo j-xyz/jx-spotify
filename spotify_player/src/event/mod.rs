@@ -24,6 +24,7 @@ use anyhow::{Context as _, Result};
 use crossterm::event::KeyCode;
 use serde::Serialize;
 use std::{
+    env,
     fs::{self, File},
     io::Write,
     path::{Path, PathBuf},
@@ -164,7 +165,7 @@ fn handle_key_event(
     if ui.popup.is_none()
         && ui.input_key_sequence.keys.is_empty()
         && !page_accepts_text_input(&ui)
-        && popup::try_open_shortcut_family_popup(key, &mut ui)
+        && popup::try_open_shortcut_family_popup(key, state, &mut ui)
     {
         ui.count_prefix = None;
         return Ok(());
@@ -192,6 +193,15 @@ fn handle_key_event(
         ui.input_key_sequence.keys = vec![];
         ui.count_prefix = None;
     } else {
+        if keymap_config
+            .find_command_or_action_from_key_sequence(&key_sequence)
+            .is_some()
+        {
+            ui.input_key_sequence.keys = vec![];
+            ui.count_prefix = None;
+            return Ok(());
+        }
+
         // update the count prefix if the key is a digit
         match key {
             Key::None(KeyCode::Char(c)) if c.is_ascii_digit() => {
@@ -528,6 +538,43 @@ pub fn handle_action_in_context(
     }
 }
 
+pub(super) fn handle_action_in_owned_context(
+    action: Action,
+    context: ActionContext,
+    client_pub: &flume::Sender<ClientRequest>,
+    state: &SharedState,
+    ui: &mut UIStateGuard,
+) -> Result<bool> {
+    if matches!(action, Action::GoToRadio) {
+        match &context {
+            ActionContext::Track(track) => {
+                handle_go_to_radio(&track.id.uri(), &track.name, ui, state, client_pub)?;
+                return Ok(true);
+            }
+            ActionContext::Album(album) => {
+                handle_go_to_radio(&album.id.uri(), &album.name, ui, state, client_pub)?;
+                return Ok(true);
+            }
+            ActionContext::Artist(artist) => {
+                handle_go_to_radio(&artist.id.uri(), &artist.name, ui, state, client_pub)?;
+                return Ok(true);
+            }
+            ActionContext::Playlist(playlist) => {
+                handle_go_to_radio(&playlist.id.uri(), &playlist.name, ui, state, client_pub)?;
+                return Ok(true);
+            }
+            ActionContext::Episode(episode) => {
+                handle_go_to_radio(&episode.id.uri(), &episode.name, ui, state, client_pub)?;
+                return Ok(true);
+            }
+            ActionContext::Show(_) | ActionContext::PlaylistFolder(_) => {}
+        }
+    }
+
+    let data = state.data.read();
+    handle_action_in_context(action, context, client_pub, state, &data, ui)
+}
+
 fn handle_go_to_radio(
     seed_uri: &str,
     seed_name: &str,
@@ -604,13 +651,27 @@ fn handle_global_action(
     ui: &mut UIStateGuard,
 ) -> Result<bool> {
     if target == ActionTarget::PlayingTrack {
-        let player = state.player.read();
-        let data = state.data.read();
+        let currently_playing = {
+            let player = state.player.read();
+            player.currently_playing().cloned()
+        };
 
-        if let Some(currently_playing) = player.currently_playing() {
+        if let Some(currently_playing) = currently_playing {
             match currently_playing {
                 rspotify::model::PlayableItem::Track(track) => {
-                    if let Some(track) = Track::try_from_full_track(track.clone()) {
+                    if let Some(track) = Track::try_from_full_track(track) {
+                        if matches!(action, Action::GoToRadio) {
+                            handle_go_to_radio(
+                                &track.id.uri(),
+                                &track.name,
+                                ui,
+                                state,
+                                client_pub,
+                            )?;
+                            return Ok(true);
+                        }
+
+                        let data = state.data.read();
                         return handle_action_in_context(
                             action,
                             ActionContext::Track(track),
@@ -622,9 +683,21 @@ fn handle_global_action(
                     }
                 }
                 rspotify::model::PlayableItem::Episode(episode) => {
+                    if matches!(action, Action::GoToRadio) {
+                        handle_go_to_radio(
+                            &episode.id.uri(),
+                            &episode.name,
+                            ui,
+                            state,
+                            client_pub,
+                        )?;
+                        return Ok(true);
+                    }
+
+                    let data = state.data.read();
                     return handle_action_in_context(
                         action,
-                        ActionContext::Episode(episode.clone().into()),
+                        ActionContext::Episode(episode.into()),
                         client_pub,
                         state,
                         &data,
@@ -718,36 +791,39 @@ fn handle_global_command(
             client_pub.send(ClientRequest::GetCurrentPlayback)?;
         }
         Command::GoToRadioFromCurrentTrack => {
-            let player = state.player.read();
-            let data = state.data.read();
+            let currently_playing = {
+                let player = state.player.read();
+                player.currently_playing().cloned()
+            };
 
-            if let Some(currently_playing) = player.currently_playing() {
+            if let Some(currently_playing) = currently_playing {
                 match currently_playing {
                     rspotify::model::PlayableItem::Track(track) => {
-                        if let Some(track) = Track::try_from_full_track(track.clone()) {
-                            handle_action_in_context(
-                                Action::GoToRadio,
-                                ActionContext::Track(track),
-                                client_pub,
-                                state,
-                                &data,
+                        if let Some(track) = Track::try_from_full_track(track) {
+                            handle_go_to_radio(
+                                &track.id.uri(),
+                                &track.name,
                                 ui,
+                                state,
+                                client_pub,
                             )?;
+                            return Ok(true);
                         }
                     }
                     rspotify::model::PlayableItem::Episode(episode) => {
-                        handle_action_in_context(
-                            Action::GoToRadio,
-                            ActionContext::Episode(episode.clone().into()),
-                            client_pub,
-                            state,
-                            &data,
+                        handle_go_to_radio(
+                            &episode.id.uri(),
+                            &episode.name,
                             ui,
+                            state,
+                            client_pub,
                         )?;
+                        return Ok(true);
                     }
-                    rspotify::model::PlayableItem::Unknown(_) => {}
+                    rspotify::model::PlayableItem::Unknown(_) => return Ok(false),
                 }
             }
+            return Ok(false);
         }
         Command::ShowActionsOnCurrentTrack => {
             if let Some(currently_playing) = state.player.read().currently_playing() {
@@ -1025,6 +1101,8 @@ struct ExternalHandoffEnvelope {
 #[derive(Serialize)]
 struct ExternalHandoffPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
+    target_dir: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     now_playing: Option<ExternalNowPlayingPayload>,
 }
 
@@ -1113,6 +1191,8 @@ fn write_external_handoff_file(state: &SharedState, cache_folder: &Path) -> Resu
         created_at: chrono::Utc::now().to_rfc3339(),
         return_token: generate_return_token(),
         payload: ExternalHandoffPayload {
+            target_dir: resolve_external_glow_target_dir()
+                .map(|path| path.to_string_lossy().into_owned()),
             now_playing: build_now_playing_payload(state),
         },
     };
@@ -1198,6 +1278,104 @@ fn prune_stale_handoff_files(dir: &Path) {
         if modified < cutoff {
             let _ = fs::remove_file(path);
         }
+    }
+}
+
+fn resolve_external_glow_target_dir() -> Option<PathBuf> {
+    let current_dir = env::current_dir().ok();
+    let workspace_root = discover_handoff_workspace_root(current_dir.as_deref()).or_else(|| {
+        let hinted = PathBuf::from(WORKSPACE_ROOT_HINT);
+        is_maeve_workspace_root(&hinted).then_some(hinted)
+    });
+
+    preferred_external_glow_target_dir(current_dir.as_deref(), workspace_root.as_deref())
+}
+
+fn preferred_external_glow_target_dir(
+    current_dir: Option<&Path>,
+    workspace_root: Option<&Path>,
+) -> Option<PathBuf> {
+    let workspace_root = workspace_root?;
+
+    if let Some(current_dir) = current_dir {
+        if let Some(project_root) = infer_managed_project_root(current_dir, workspace_root) {
+            return Some(project_root);
+        }
+
+        if current_dir.starts_with(workspace_root) {
+            return Some(workspace_root.to_path_buf());
+        }
+    }
+
+    Some(workspace_root.to_path_buf())
+}
+
+fn discover_handoff_workspace_root(current_dir: Option<&Path>) -> Option<PathBuf> {
+    let current_dir = current_dir?;
+
+    for ancestor in current_dir.ancestors() {
+        if is_maeve_workspace_root(ancestor) {
+            return Some(ancestor.to_path_buf());
+        }
+    }
+
+    None
+}
+
+fn infer_managed_project_root(current_dir: &Path, workspace_root: &Path) -> Option<PathBuf> {
+    let projects_root = workspace_root.join("projects");
+    let relative = current_dir.strip_prefix(&projects_root).ok()?;
+    let mut components = relative.components();
+    let project = components.next()?;
+    let project_root = projects_root.join(project.as_os_str());
+    project_root.is_dir().then_some(project_root)
+}
+
+fn is_maeve_workspace_root(path: &Path) -> bool {
+    path.join(".maeve").join("projects.yaml").is_file()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preferred_external_glow_target_dir_uses_managed_project_root() {
+        let root = std::env::temp_dir().join(format!(
+            "jx-spotify-handoff-root-{}-project",
+            std::process::id()
+        ));
+        let project_root = root.join("projects").join("jx-glow");
+        let nested = project_root.join("docs").join("planning");
+        std::fs::create_dir_all(&nested).expect("create nested project path");
+
+        let target = preferred_external_glow_target_dir(Some(&nested), Some(&root))
+            .expect("expected managed project target");
+
+        assert_eq!(target, project_root);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn preferred_external_glow_target_dir_falls_back_to_workspace_root() {
+        let root = std::env::temp_dir().join(format!(
+            "jx-spotify-handoff-root-{}-workspace",
+            std::process::id()
+        ));
+        let unrelated = std::env::temp_dir().join(format!(
+            "jx-spotify-handoff-unrelated-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).expect("create workspace root");
+        std::fs::create_dir_all(&unrelated).expect("create unrelated directory");
+
+        let target = preferred_external_glow_target_dir(Some(&unrelated), Some(&root))
+            .expect("expected workspace root target");
+
+        assert_eq!(target, root);
+
+        let _ = std::fs::remove_dir_all(&unrelated);
     }
 }
 

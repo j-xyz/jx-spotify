@@ -1455,20 +1455,10 @@ fn context_page_type_rows(
     context_state: Option<&ContextPageUIState>,
 ) -> Vec<(String, String)> {
     match context_page_type {
-        ContextPageType::CurrentPlaying => vec![
-            (
-                format_shortcuts(&["enter"]),
-                "open or play the selected track or episode".to_string(),
-            ),
-            (
-                format_shortcuts(&["r x"]),
-                "start radio from the current context".to_string(),
-            ),
-            (
-                format_shortcuts(&["a x"]),
-                "show actions for the current context".to_string(),
-            ),
-        ],
+        ContextPageType::CurrentPlaying => vec![(
+            format_shortcuts(&["enter"]),
+            "open or play the selected track or episode".to_string(),
+        )],
         ContextPageType::Browsing(id) => match id {
             crate::state::ContextId::Show(_) => vec![
                 (
@@ -1512,20 +1502,10 @@ fn context_page_type_rows(
                     "show actions for the current album".to_string(),
                 ),
             ],
-            crate::state::ContextId::Tracks(_) => vec![
-                (
-                    format_shortcuts(&["enter"]),
-                    "open or start playback from the selected track".to_string(),
-                ),
-                (
-                    format_shortcuts(&["r x"]),
-                    "start radio from the current tracks view".to_string(),
-                ),
-                (
-                    format_shortcuts(&["a x"]),
-                    "show actions for the current tracks view".to_string(),
-                ),
-            ],
+            crate::state::ContextId::Tracks(_) => vec![(
+                format_shortcuts(&["enter"]),
+                "open or start playback from the selected track".to_string(),
+            )],
             crate::state::ContextId::Artist(_) => {
                 let mut rows = vec![
                     (

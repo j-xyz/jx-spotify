@@ -1,5 +1,5 @@
 use super::model::{
-    AlbumId, ArtistId, ContextId, Device, PlaybackMetadata, PlaylistId, ShowId, TracksId,
+    AlbumId, ArtistId, ContextId, Device, PlaybackMetadata, PlaylistId, ShowId, Track, TracksId,
 };
 
 /// Player state
@@ -55,6 +55,15 @@ impl PlayerState {
 
     pub fn currently_playing(&self) -> Option<&rspotify::model::PlayableItem> {
         self.playback.as_ref().and_then(|p| p.item.as_ref())
+    }
+
+    pub fn current_item_supports_radio(&self) -> bool {
+        match self.currently_playing() {
+            Some(rspotify::model::PlayableItem::Track(track)) => {
+                Track::try_from_full_track(track.clone()).is_some()
+            }
+            _ => false,
+        }
     }
 
     pub fn playback_progress(&self) -> Option<chrono::Duration> {

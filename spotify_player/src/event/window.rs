@@ -20,6 +20,56 @@ pub fn handle_action_for_focused_context_page(
         return Ok(false);
     };
 
+    if matches!(action, Action::GoToRadio) {
+        let selected_context = {
+            let data = state.data.read();
+            match data.caches.context.get(&id.uri()) {
+                Some(Context::Artist {
+                    top_tracks,
+                    albums,
+                    related_artists,
+                    ..
+                }) => {
+                    let PageState::Context {
+                        state: Some(ContextPageUIState::Artist { focus, .. }),
+                        ..
+                    } = ui.current_page()
+                    else {
+                        return Ok(false);
+                    };
+
+                    match focus {
+                        ArtistFocusState::Albums => {
+                            selected_action_context(&ui.search_filtered_items(albums), ui)
+                        }
+                        ArtistFocusState::RelatedArtists => {
+                            selected_action_context(&ui.search_filtered_items(related_artists), ui)
+                        }
+                        ArtistFocusState::TopTracks => {
+                            selected_action_context(&ui.search_filtered_tracks(top_tracks), ui)
+                        }
+                    }
+                }
+                Some(
+                    Context::Album { tracks, .. }
+                    | Context::Tracks { tracks, .. }
+                    | Context::Playlist { tracks, .. },
+                ) => selected_action_context(&ui.search_filtered_tracks(tracks), ui),
+                Some(Context::Show { episodes, .. }) => {
+                    selected_action_context(&ui.search_filtered_items(episodes), ui)
+                }
+                None => None,
+            }
+        };
+
+        return match selected_context {
+            Some(context) => {
+                super::handle_action_in_owned_context(action, context, client_pub, state, ui)
+            }
+            None => Ok(false),
+        };
+    }
+
     let data = state.data.read();
     match data.caches.context.get(&id.uri()) {
         Some(Context::Artist {
@@ -41,7 +91,6 @@ pub fn handle_action_for_focused_context_page(
                     action,
                     &ui.search_filtered_items(albums),
                     state,
-                    &data,
                     ui,
                     client_pub,
                 ),
@@ -49,7 +98,6 @@ pub fn handle_action_for_focused_context_page(
                     action,
                     &ui.search_filtered_items(related_artists),
                     state,
-                    &data,
                     ui,
                     client_pub,
                 ),
@@ -57,7 +105,6 @@ pub fn handle_action_for_focused_context_page(
                     action,
                     &ui.search_filtered_tracks(top_tracks),
                     state,
-                    &data,
                     ui,
                     client_pub,
                 ),
@@ -71,7 +118,6 @@ pub fn handle_action_for_focused_context_page(
             action,
             &ui.search_filtered_tracks(tracks),
             state,
-            &data,
             ui,
             client_pub,
         ),
@@ -79,7 +125,6 @@ pub fn handle_action_for_focused_context_page(
             action,
             &ui.search_filtered_items(episodes),
             state,
-            &data,
             ui,
             client_pub,
         ),
@@ -87,27 +132,30 @@ pub fn handle_action_for_focused_context_page(
     }
 }
 
+pub fn selected_action_context<T: Into<ActionContext> + Clone>(
+    items: &[&T],
+    ui: &mut UIStateGuard,
+) -> Option<ActionContext> {
+    let id = ui.current_page_mut().selected().unwrap_or_default();
+    if id >= items.len() {
+        return None;
+    }
+
+    Some(items[id].clone().into())
+}
+
 pub fn handle_action_for_selected_item<T: Into<ActionContext> + Clone>(
     action: Action,
     items: &[&T],
     state: &SharedState,
-    data: &DataReadGuard,
     ui: &mut UIStateGuard,
     client_pub: &flume::Sender<ClientRequest>,
 ) -> Result<bool> {
-    let id = ui.current_page_mut().selected().unwrap_or_default();
-    if id >= items.len() {
+    let Some(context) = selected_action_context(items, ui) else {
         return Ok(false);
-    }
+    };
 
-    handle_action_in_context(
-        action,
-        items[id].clone().into(),
-        client_pub,
-        state,
-        data,
-        ui,
-    )
+    super::handle_action_in_owned_context(action, context, client_pub, state, ui)
 }
 
 /// Handle a command for the currently focused context window

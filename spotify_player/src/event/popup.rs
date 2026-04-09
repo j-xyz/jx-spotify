@@ -2,18 +2,26 @@ use super::*;
 use crate::{command::construct_artist_actions, utils::filtered_items_from_query};
 use anyhow::Context;
 
-pub fn try_open_shortcut_family_popup(key: Key, ui: &mut UIStateGuard) -> bool {
+pub fn try_open_shortcut_family_popup(
+    key: Key,
+    state: &SharedState,
+    ui: &mut UIStateGuard,
+) -> bool {
     let prefix = KeySequence { keys: vec![key] };
-    open_shortcut_family_popup(prefix, ui)
+    open_shortcut_family_popup(prefix, state, ui)
 }
 
-fn open_shortcut_family_popup(prefix: KeySequence, ui: &mut UIStateGuard) -> bool {
+fn open_shortcut_family_popup(
+    prefix: KeySequence,
+    state: &SharedState,
+    ui: &mut UIStateGuard,
+) -> bool {
     let title = match shortcut_family_title(&prefix) {
         Some(title) => title,
         None => return false,
     };
 
-    let items = build_shortcut_family_items(&prefix);
+    let items = build_shortcut_family_items(&prefix, state, ui);
 
     if items.is_empty() {
         return false;
@@ -51,7 +59,11 @@ fn shortcut_family_title(prefix: &KeySequence) -> Option<String> {
     Some(format!("{base} {}", suffix.join(" ")))
 }
 
-fn build_shortcut_family_items(prefix: &KeySequence) -> Vec<crate::state::ShortcutFamilyItem> {
+fn build_shortcut_family_items(
+    prefix: &KeySequence,
+    state: &SharedState,
+    ui: &UIStateGuard,
+) -> Vec<crate::state::ShortcutFamilyItem> {
     let mut items = Vec::new();
     let prefix_len = prefix.keys.len();
 
@@ -59,6 +71,10 @@ fn build_shortcut_family_items(prefix: &KeySequence) -> Vec<crate::state::Shortc
         .keymap_config
         .find_matched_prefix_keymaps(prefix)
     {
+        if !shortcut_family_command_available(keymap.command, state, ui) {
+            continue;
+        }
+
         if keymap.key_sequence.keys.len() <= prefix_len {
             continue;
         }
@@ -105,6 +121,39 @@ fn build_shortcut_family_items(prefix: &KeySequence) -> Vec<crate::state::Shortc
     }
 
     items
+}
+
+fn shortcut_family_command_available(
+    command: Command,
+    state: &SharedState,
+    ui: &UIStateGuard,
+) -> bool {
+    let player = state.player.read();
+
+    match command {
+        Command::ShowActionsOnCurrentContext | Command::GoToRadioFromCurrentContext => {
+            context_shortcut_available(ui)
+        }
+        Command::ShowActionsOnCurrentTrack => player.currently_playing().is_some(),
+        Command::GoToRadioFromCurrentTrack => player.current_item_supports_radio(),
+        _ => true,
+    }
+}
+
+fn context_shortcut_available(ui: &UIStateGuard) -> bool {
+    matches!(
+        ui.current_page(),
+        PageState::Context {
+            id: Some(_),
+            context_page_type: ContextPageType::Browsing(
+                ContextId::Playlist(_)
+                    | ContextId::Album(_)
+                    | ContextId::Artist(_)
+                    | ContextId::Show(_)
+            ),
+            ..
+        }
+    )
 }
 
 pub fn handle_key_sequence_for_popup(
@@ -448,9 +497,18 @@ fn handle_key_sequence_for_shortcut_family_popup(
     state: &SharedState,
     ui: &mut UIStateGuard,
 ) -> Result<bool> {
+    if key_sequence.keys.len() == 1 {
+        if let Some(PopupState::ShortcutFamily { prefix, .. }) = ui.popup.as_ref() {
+            if prefix.keys.first() == key_sequence.keys.first() {
+                ui.popup = None;
+                return Ok(true);
+            }
+        }
+    }
+
     if let Some(entry) = shortcut_family_entry_from_key_sequence(key_sequence, ui) {
         if entry.has_children {
-            return Ok(open_shortcut_family_popup(entry.key_sequence, ui));
+            return Ok(open_shortcut_family_popup(entry.key_sequence, state, ui));
         }
         ui.popup = None;
         return super::dispatch_key_sequence(&entry.key_sequence, client_pub, state, ui);
@@ -466,17 +524,24 @@ fn handle_key_sequence_for_shortcut_family_popup(
             _ => return Ok(false),
         };
 
-        if open_shortcut_family_popup(nested_prefix, ui) {
+        if open_shortcut_family_popup(nested_prefix, state, ui) {
             return Ok(true);
         }
     }
 
-    let Some(command) = config::get_config()
-        .keymap_config
-        .find_command_from_key_sequence(key_sequence)
-    else {
+    let keymap_config = &config::get_config().keymap_config;
+    if keymap_config
+        .find_command_or_action_from_key_sequence(key_sequence)
+        .is_some()
+        || keymap_config.has_matched_prefix(key_sequence)
+    {
         ui.popup = None;
         return super::dispatch_key_sequence(key_sequence, client_pub, state, ui);
+    }
+
+    let Some(command) = keymap_config.find_command_from_key_sequence(key_sequence) else {
+        ui.popup = None;
+        return Ok(true);
     };
 
     let n_items = match ui.popup.as_ref() {
@@ -873,6 +938,7 @@ mod tests {
             KeySequence {
                 keys: vec![Key::None(crossterm::event::KeyCode::Char('r'))],
             },
+            &state,
             &mut ui,
         ));
 
@@ -886,7 +952,7 @@ mod tests {
         )
         .expect("handle unknown shortcut-family key");
 
-        assert!(!handled);
+        assert!(handled);
         assert!(ui.popup.is_none());
     }
 
@@ -900,6 +966,7 @@ mod tests {
             KeySequence {
                 keys: vec![Key::None(crossterm::event::KeyCode::Char('g'))],
             },
+            &state,
             &mut ui,
         ));
 
@@ -918,6 +985,62 @@ mod tests {
     }
 
     #[test]
+    fn shortcut_family_popup_consumes_hidden_invalid_key() {
+        let state = test_state();
+        let (client_pub, _client_sub) = flume::unbounded();
+        let mut ui = state.ui.lock();
+
+        assert!(open_shortcut_family_popup(
+            KeySequence {
+                keys: vec![Key::None(crossterm::event::KeyCode::Char('r'))],
+            },
+            &state,
+            &mut ui,
+        ));
+
+        let handled = handle_key_sequence_for_shortcut_family_popup(
+            &KeySequence {
+                keys: vec![Key::None(crossterm::event::KeyCode::Char('x'))],
+            },
+            &client_pub,
+            &state,
+            &mut ui,
+        )
+        .expect("consume hidden invalid radio-family key");
+
+        assert!(handled);
+        assert!(ui.popup.is_none());
+    }
+
+    #[test]
+    fn shortcut_family_popup_repeated_family_key_cancels_popup() {
+        let state = test_state();
+        let (client_pub, _client_sub) = flume::unbounded();
+        let mut ui = state.ui.lock();
+
+        assert!(open_shortcut_family_popup(
+            KeySequence {
+                keys: vec![Key::None(crossterm::event::KeyCode::Char('r'))],
+            },
+            &state,
+            &mut ui,
+        ));
+
+        let handled = handle_key_sequence_for_shortcut_family_popup(
+            &KeySequence {
+                keys: vec![Key::None(crossterm::event::KeyCode::Char('r'))],
+            },
+            &client_pub,
+            &state,
+            &mut ui,
+        )
+        .expect("repeat family key should cancel popup");
+
+        assert!(handled);
+        assert!(ui.popup.is_none());
+    }
+
+    #[test]
     fn shortcut_family_popup_dispatches_global_single_key_command() {
         let state = test_state();
         let (client_pub, client_sub) = flume::unbounded();
@@ -927,6 +1050,7 @@ mod tests {
             KeySequence {
                 keys: vec![Key::None(crossterm::event::KeyCode::Char('g'))],
             },
+            &state,
             &mut ui,
         ));
 
@@ -959,6 +1083,7 @@ mod tests {
             KeySequence {
                 keys: vec![Key::None(crossterm::event::KeyCode::Char('g'))],
             },
+            &state,
             &mut ui,
         ));
 
@@ -978,5 +1103,30 @@ mod tests {
         assert!(handled);
         assert!(ui.popup.is_none());
         assert_eq!(ui.history.len(), history_len + 1);
+    }
+
+    #[test]
+    fn radio_shortcut_family_hides_current_track_without_playback() {
+        let state = test_state();
+        let mut ui = state.ui.lock();
+
+        assert!(open_shortcut_family_popup(
+            KeySequence {
+                keys: vec![Key::None(crossterm::event::KeyCode::Char('r'))],
+            },
+            &state,
+            &mut ui,
+        ));
+
+        let Some(PopupState::ShortcutFamily { items, .. }) = ui.popup.as_ref() else {
+            panic!("expected shortcut family popup");
+        };
+
+        assert!(!items.iter().any(|item| {
+            item.trigger
+                == KeySequence {
+                    keys: vec![Key::None(crossterm::event::KeyCode::Char('c'))],
+                }
+        }));
     }
 }
