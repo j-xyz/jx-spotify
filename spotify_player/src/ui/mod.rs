@@ -292,7 +292,7 @@ fn footer_help_preview_spans(ui: &UIStateGuard) -> Line<'static> {
     let label = ui.theme.playback_metadata();
     Line::from(vec![
         Span::styled("a", key),
-        Span::styled(" action, ", label),
+        Span::styled(" actions, ", label),
         Span::styled("g", key),
         Span::styled(" go, ", label),
         Span::styled("m", key),
@@ -300,17 +300,17 @@ fn footer_help_preview_spans(ui: &UIStateGuard) -> Line<'static> {
         Span::styled("r", key),
         Span::styled(" radio, ", label),
         Span::styled("s", key),
-        Span::styled(" sort, ", label),
+        Span::styled(" sorting, ", label),
         Span::styled("u", key),
         Span::styled(" user, ", label),
         Span::styled("/", key),
         Span::styled(" search, ", label),
         Span::styled("esc", key),
-        Span::styled(" clear/back, ", label),
+        Span::styled(" back, ", label),
         Span::styled("tab", key),
-        Span::styled(" move focus, ", label),
+        Span::styled(" focus, ", label),
         Span::styled("?", key),
-        Span::styled(" help", label),
+        Span::styled(" full help", label),
     ])
 }
 

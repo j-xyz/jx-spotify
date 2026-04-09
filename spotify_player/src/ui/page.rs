@@ -1220,19 +1220,19 @@ fn global_help_rows() -> Vec<(String, String)> {
     vec![
         (
             format_shortcuts(&["a", "m", "r", "s", "g", "u"]),
-            "first-key families: actions, mode, radio, sorting, go to, user".to_string(),
+            "a actions, m mode, r radio, s sorting, g go, u user".to_string(),
         ),
         (
             format_shortcuts(&["/", "?", "esc", "tab"]),
-            "core keys: search, help, back, focus".to_string(),
+            "/ search, ? preview/help, esc back, tab focus".to_string(),
         ),
         (
             "!, @, $".to_string(),
-            "sigil grammar: ! album, @ artist, $ song".to_string(),
+            "! album, @ artist, $ song filters".to_string(),
         ),
         (
             "#, %".to_string(),
-            "reserved sigils for future expansion".to_string(),
+            "# and % reserved for future grammar".to_string(),
         ),
     ]
 }
@@ -1380,7 +1380,7 @@ pub(crate) fn context_help_rows(
     let mut rows = vec![
         (
             format_shortcuts(&["up", "down", "j", "k"]),
-            "move selection in the current pane".to_string(),
+            "move selection in this pane".to_string(),
         ),
         (
             format_shortcuts(&["enter"]),
@@ -1401,28 +1401,22 @@ pub(crate) fn context_help_rows(
                 },
             },
         ),
-        (
-            format_shortcuts(&["/"]),
-            "search within the current context".to_string(),
-        ),
+        (format_shortcuts(&["/"]), "search this context".to_string()),
     ];
 
     if context_supports_track_sigils(context_page_type, context_state) {
         rows.push((
             "!, @, $".to_string(),
-            "search sigils: ! album, @ artist, $ song".to_string(),
+            "! album, @ artist, $ song filters".to_string(),
         ));
     }
 
     rows.extend([
         (
             format_shortcuts(&["esc"]),
-            "go back or close the current view".to_string(),
+            "go back or close this view".to_string(),
         ),
-        (
-            format_shortcuts(&["?"]),
-            "close this help popup".to_string(),
-        ),
+        (format_shortcuts(&["?"]), "close this help".to_string()),
     ]);
 
     rows.extend(context_page_type_rows(context_page_type, context_state));
@@ -1455,66 +1449,48 @@ fn context_page_type_rows(
     context_state: Option<&ContextPageUIState>,
 ) -> Vec<(String, String)> {
     match context_page_type {
-        ContextPageType::CurrentPlaying => vec![(
-            format_shortcuts(&["enter"]),
-            "open or play the selected track or episode".to_string(),
-        )],
+        ContextPageType::CurrentPlaying => Vec::new(),
         ContextPageType::Browsing(id) => match id {
             crate::state::ContextId::Show(_) => vec![
                 (
-                    format_shortcuts(&["enter"]),
-                    "play the selected episode".to_string(),
-                ),
-                (
                     format_shortcuts(&["r x"]),
-                    "start radio from the current show".to_string(),
+                    "radio from this show".to_string(),
                 ),
                 (
                     format_shortcuts(&["a x"]),
-                    "show actions for the current show".to_string(),
+                    "actions for this show".to_string(),
                 ),
             ],
             crate::state::ContextId::Playlist(_) => vec![
                 (
-                    format_shortcuts(&["enter"]),
-                    "play the selected track".to_string(),
-                ),
-                (
                     format_shortcuts(&["r x"]),
-                    "start radio from the current playlist".to_string(),
+                    "radio from this playlist".to_string(),
                 ),
                 (
                     format_shortcuts(&["a x"]),
-                    "show actions for the current playlist".to_string(),
+                    "actions for this playlist".to_string(),
                 ),
             ],
             crate::state::ContextId::Album(_) => vec![
                 (
-                    format_shortcuts(&["enter"]),
-                    "play the selected track".to_string(),
-                ),
-                (
                     format_shortcuts(&["r x"]),
-                    "start radio from the current album".to_string(),
+                    "radio from this album".to_string(),
                 ),
                 (
                     format_shortcuts(&["a x"]),
-                    "show actions for the current album".to_string(),
+                    "actions for this album".to_string(),
                 ),
             ],
-            crate::state::ContextId::Tracks(_) => vec![(
-                format_shortcuts(&["enter"]),
-                "open or start playback from the selected track".to_string(),
-            )],
+            crate::state::ContextId::Tracks(_) => Vec::new(),
             crate::state::ContextId::Artist(_) => {
                 let mut rows = vec![
                     (
                         format_shortcuts(&["r x"]),
-                        "start radio from the current artist".to_string(),
+                        "radio from this artist".to_string(),
                     ),
                     (
                         format_shortcuts(&["a x"]),
-                        "show actions for the current artist".to_string(),
+                        "actions for this artist".to_string(),
                     ),
                 ];
 
@@ -1524,16 +1500,16 @@ fn context_page_type_rows(
                         [
                             (
                                 format_shortcuts(&["tab", "backtab"]),
-                                "switch between top tracks, albums, and related artists"
+                                "switch focus between top tracks, albums, and related artists"
                                     .to_string(),
                             ),
                             (
                                 format_shortcuts(&["a s"]),
-                                "show actions for the selected item".to_string(),
+                                "actions for the selected item".to_string(),
                             ),
                             (
                                 format_shortcuts(&["r s"]),
-                                "start radio from the selected item".to_string(),
+                                "radio from the selected item".to_string(),
                             ),
                         ],
                     );

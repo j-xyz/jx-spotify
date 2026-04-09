@@ -366,13 +366,15 @@ spotify_player playback start track --id $(spotify_player search "$query" | jq '
 
 ## Commands
 
-Press `?` to open the shortcut help page (default for `OpenCommandHelp`).
+Press `?` once for the footer shortcut preview. Press `?` again to open the full shortcut help page (`OpenCommandHelp`) from most non-text pages.
 
 **Tips**:
 
 - Use the `Search` command to search in the shortcut help page and other pages.
 - `r s`, `r c`, and `r x` open radio from the selected item, current track, and current context.
 - `m` is the playback control family: repeat, shuffle, refresh, device, and integrated-client recovery.
+- Key-pair grammar follows the app help: `a` actions, `g` go, `m` mode, `r` radio, `s` sorting, `u` user.
+- Sigils follow the shared grammar: `!` album, `@` artist, `$` song. `#` and `%` remain reserved.
 
 List of supported commands:
 
@@ -415,18 +417,20 @@ List of supported commands:
 | `BrowseUserPlaylists`           | open a popup for browsing user's playlists                                                         | `u p`              |
 | `BrowseUserFollowedArtists`     | open a popup for browsing user's followed artists                                                  | `u a`              |
 | `BrowseUserSavedAlbums`         | open a popup for browsing user's saved albums                                                      | `u A`              |
-| `CurrentlyPlayingContextPage`   | go to the currently playing context page                                                           | `g space`          |
+| `CurrentlyPlayingContextPage`   | go to the current playback context page                                                            | `g c`              |
 | `TopTrackPage`                  | go to the user top track page                                                                      | `g t`              |
 | `RecentlyPlayedTrackPage`       | go to the user recently played track page                                                          | `g r`              |
 | `LikedTrackPage`                | go to the user liked track page                                                                    | `g y`              |
 | `LyricsPage`                    | go to the lyrics page of the current track                                                         | `g L`, `l`         |
 | `LibraryPage`                   | go to the user library page                                                                        | `g l`              |
 | `SearchPage`                    | go to the search page                                                                              | `g s`              |
+| `SearchTuiHome`                 | go to a fresh search home view                                                                     | `g i`              |
 | `BrowsePage`                    | go to the browse page                                                                              | `g b`              |
 | `Queue`                         | go to the queue page                                                                               | `z`                |
-| `OpenCommandHelp`               | go to the command help page                                                                        | `?`                |
-| `PreviousPage`                  | go to the previous page                                                                            | `backspace`        |
-| `OpenLogs`                      | go the the application logs page                                                                   | `g o`              |
+| `OpenCommandHelp`               | go to the command help page (`?` opens the footer preview first on most non-text pages)           | `?`                |
+| `PreviousPage`                  | go back or close the current popup                                                                 | `esc`, `g u`       |
+| `OpenLogs`                      | go to the application logs page                                                                    | `g o`              |
+| `GoExternalGlow`                | hand off to `jx-glow` with current playback context                                                | `g x g`            |
 | `OpenSpotifyLinkFromClipboard`  | open a Spotify link from clipboard                                                                 | `O`                |
 | `SortTrackByTitle`              | sort the track table (if any) by track's title                                                     | `s t`              |
 | `SortTrackByArtists`            | sort the track table (if any) by track's artists                                                   | `s a`              |
@@ -447,9 +451,9 @@ To add or modify shortcuts, see the [keymaps section](https://github.com/aome510
 ### Actions
 
 Not all actions are available for every Spotify item. Use the `a` action prefix with a scope key:
-- `a c` for the current track
-- `a s` for the selected item
-- `a x` for the current context
+- `a c` current track
+- `a s` selected item
+- `a x` current context
 
 Then press enter to trigger the chosen action. Some actions may not appear in the popup but can be bound to shortcuts.
 

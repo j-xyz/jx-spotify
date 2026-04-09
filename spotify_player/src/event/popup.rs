@@ -820,26 +820,24 @@ pub fn handle_item_action(
         _ => return Ok(false),
     };
 
-    let data = state.data.read();
-
     match item {
         ActionListItem::Track(track, actions) => {
-            handle_action_in_context(actions[n], track.into(), client_pub, state, &data, ui)
+            handle_action_in_owned_context(actions[n], track.into(), client_pub, state, ui)
         }
         ActionListItem::Album(album, actions) => {
-            handle_action_in_context(actions[n], album.into(), client_pub, state, &data, ui)
+            handle_action_in_owned_context(actions[n], album.into(), client_pub, state, ui)
         }
         ActionListItem::Artist(artist, actions) => {
-            handle_action_in_context(actions[n], artist.into(), client_pub, state, &data, ui)
+            handle_action_in_owned_context(actions[n], artist.into(), client_pub, state, ui)
         }
         ActionListItem::Playlist(playlist, actions) => {
-            handle_action_in_context(actions[n], playlist.into(), client_pub, state, &data, ui)
+            handle_action_in_owned_context(actions[n], playlist.into(), client_pub, state, ui)
         }
         ActionListItem::Show(show, actions) => {
-            handle_action_in_context(actions[n], show.into(), client_pub, state, &data, ui)
+            handle_action_in_owned_context(actions[n], show.into(), client_pub, state, ui)
         }
         ActionListItem::Episode(episode, actions) => {
-            handle_action_in_context(actions[n], episode.into(), client_pub, state, &data, ui)
+            handle_action_in_owned_context(actions[n], episode.into(), client_pub, state, ui)
         }
     }
 }
@@ -1128,5 +1126,71 @@ mod tests {
                     keys: vec![Key::None(crossterm::event::KeyCode::Char('c'))],
                 }
         }));
+    }
+
+    #[test]
+    fn action_list_go_to_radio_pushes_radio_context() {
+        let state = test_state();
+        let (client_pub, _client_sub) = flume::unbounded();
+        let mut ui = state.ui.lock();
+
+        let artist = crate::state::Artist {
+            id: rspotify::model::ArtistId::from_id("1111111111111111111111")
+                .unwrap()
+                .into_static(),
+            name: "Phoebe Bridgers".to_string(),
+        };
+        let album = crate::state::Album {
+            id: rspotify::model::AlbumId::from_id("2222222222222222222222")
+                .unwrap()
+                .into_static(),
+            release_date: "2023".to_string(),
+            name: "Punisher".to_string(),
+            artists: vec![artist.clone()],
+            typ: None,
+            added_at: 0,
+        };
+        let track = crate::state::Track {
+            id: rspotify::model::TrackId::from_id("3333333333333333333333")
+                .unwrap()
+                .into_static(),
+            name: "Kyoto".to_string(),
+            artists: vec![artist],
+            album: Some(album),
+            duration: std::time::Duration::from_secs(180),
+            explicit: false,
+            added_at: 0,
+        };
+
+        ui.popup = Some(PopupState::ActionList(
+            Box::new(ActionListItem::Track(
+                track.clone(),
+                vec![Action::GoToRadio],
+            )),
+            ListState::default(),
+        ));
+
+        let handled =
+            handle_item_action(0, &client_pub, &state, &mut ui).expect("dispatch action item");
+
+        assert!(handled);
+        assert!(matches!(
+            ui.current_page(),
+            crate::state::PageState::Context {
+                context_page_type: crate::state::ContextPageType::Browsing(
+                    crate::state::ContextId::Tracks(_)
+                ),
+                ..
+            }
+        ));
+        assert_eq!(
+            state
+                .player
+                .read()
+                .last_radio_tracks_id
+                .as_ref()
+                .map(|id| id.uri.clone()),
+            Some(format!("radio:{}", track.id.uri()))
+        );
     }
 }

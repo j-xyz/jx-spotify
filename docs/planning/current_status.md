@@ -1,8 +1,15 @@
 # Current Status
 
+- Radio stability audit landed in commit `341dcb6` (`fix: stabilize radio shortcut flows`).
+- Key invariant: do not hold `state.player` or `state.data` read locks across `GoToRadio` dispatch, because radio navigation persists local state (`last_radio_tracks_id`) before pushing the new context page.
+- Follow-up audit across the broader `go to` family found the same deadlock pattern was radio-specific: other `go to` flows (`GoToAlbum`, `GoToArtist`, `GoToShow`, global page switches, search/list context opens) either operate on owned values first or only push UI/navigation state and let the page-change handler fetch context data afterward.
+- Shortcut-family cleanup rule: hidden invalid keys inside a family popup should be consumed and cleared, while real prefixes and real exact commands still fall through to normal dispatch.
 - The help-splitting direction has been reviewed and scoped.
 - Current recommendation: keep the global command help page, then add smaller contextual surfaces starting with SearchTui.
 - Radio-family context fix: the modal shortcut-family popup now filters its entries with the same playback/context rules as the shortcut help overlay, so invalid options like `r c` without current playback no longer appear as live submenu entries.
+- Action-list routing fix: popup actions now use the owned-context dispatcher, so `GoToRadio` from action menus follows the same lock-safe path as the keyboard radio flows.
+- SearchTui fallback fix: local fallback results now include saved tracks again, so `$song` queries can surface liked tracks even when remote search is empty.
+- Help consistency slice: footer preview, context help, and README copy now lean on the shared `key to value` grammar, and duplicate `Enter` guidance was removed from context help.
 - Default-directory hardening: outbound `g x g` handoffs now carry an explicit `target_dir` that prefers the active managed-project root when `jx-spotify` is launched inside the Maeve workspace, otherwise falls back to the Maeve workspace root instead of inheriting an arbitrary shell cwd like `$HOME`.
 - Radio shortcut-family hardening: the popup now behaves as a self-contained modal, closes on unknown single-key input instead of leaking stale prefixes into the global key buffer, and will still dispatch a leaked full sequence like `g l` or `r s` if one reaches it. This is aimed at the recent “radio menu freeze” report.
 - Implemented slices: the app now carries a persistent four-corner shortcut frame, `?` routes to the global help page, playback metadata is more compact, track-bearing surfaces now share a split-row visual language with primary title/artist content on the left and lighter metadata on the right, and the shortcut-family popup titles now cover `s` and `u`.

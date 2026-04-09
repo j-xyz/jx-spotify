@@ -328,6 +328,17 @@ fn build_local_fallback_items(
         &mut items,
         &mut seen,
         data.user_data
+            .saved_tracks
+            .values()
+            .cloned()
+            .map(|track| SearchTuiItem::Track { track }),
+        REMOTE_TRACK_LIMIT,
+    );
+    push_matching_items(
+        parsed_query,
+        &mut items,
+        &mut seen,
+        data.user_data
             .saved_albums
             .iter()
             .cloned()
