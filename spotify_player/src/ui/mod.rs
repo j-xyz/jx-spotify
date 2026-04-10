@@ -240,12 +240,8 @@ fn render_app_chrome(
     footer: Rect,
 ) {
     let top_chunks = Layout::horizontal([Constraint::Length(11), Constraint::Fill(0)]).split(top);
-    let badge_style = Style::default()
-        .fg(ratatui::style::Color::Rgb(0x0f, 0x14, 0x19))
-        .bg(ratatui::style::Color::Rgb(0xff, 0x79, 0xc6))
-        .add_modifier(Modifier::BOLD);
     frame.render_widget(
-        Paragraph::new(Span::styled("jx-spotify", badge_style)),
+        Paragraph::new(Span::styled("jx-spotify", ui.theme.app_title())),
         top_chunks[0],
     );
     frame.render_widget(Paragraph::new(""), top_chunks[1]);

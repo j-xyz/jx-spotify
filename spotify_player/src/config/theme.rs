@@ -62,6 +62,7 @@ struct Palette {
 
 #[derive(Clone, Debug, Default, Deserialize)]
 struct ComponentStyle {
+    app_title: Option<Style>,
     playback_status: Option<Style>,
     playback_track: Option<Style>,
     playback_artists: Option<Style>,
@@ -166,6 +167,18 @@ impl ThemeConfig {
 }
 
 impl Theme {
+    pub fn app_title(&self) -> style::Style {
+        self.component_style
+            .app_title
+            .as_ref()
+            .unwrap_or(
+                &Style::default()
+                    .fg(StyleColor::BrightBlue)
+                    .modifiers([StyleModifier::Bold]),
+            )
+            .style(&self.palette)
+    }
+
     pub fn app(&self) -> style::Style {
         let mut style = style::Style::default();
         if let Some(ref c) = self.palette.background {
@@ -545,7 +558,7 @@ impl From<style::Color> for Color {
 impl Default for ThemeConfig {
     fn default() -> Self {
         Self {
-            themes: vec![Theme::default()],
+            themes: vec![Theme::default(), Theme::jx_theme()],
         }
     }
 }
@@ -556,6 +569,16 @@ impl Default for Theme {
             name: "default".to_owned(),
             palette: Palette::default(),
             component_style: ComponentStyle::default(),
+        }
+    }
+}
+
+impl Theme {
+    fn jx_theme() -> Self {
+        Self {
+            name: "jx-theme".to_owned(),
+            palette: Palette::jx_theme(),
+            component_style: ComponentStyle::jx_theme(),
         }
     }
 }
@@ -582,6 +605,96 @@ impl Default for Palette {
             bright_magenta: Color::bright_magenta(),
             bright_cyan: Color::bright_cyan(),
             bright_white: Color::bright_white(),
+        }
+    }
+}
+
+impl Palette {
+    fn jx_theme() -> Self {
+        Self {
+            background: Some("#0f1419".into()),
+            foreground: Some("#efe7da".into()),
+            black: "#0f1419".into(),
+            red: "#e59aac".into(),
+            green: "#9fd7a1".into(),
+            yellow: "#e7c88f".into(),
+            blue: "#7ea7d8".into(),
+            magenta: "#e59aac".into(),
+            cyan: "#88d0c4".into(),
+            white: "#efe7da".into(),
+            bright_black: "#5f6875".into(),
+            bright_red: "#f1aaba".into(),
+            bright_green: "#b4e4b5".into(),
+            bright_yellow: "#f0d8a7".into(),
+            bright_blue: "#9bbce3".into(),
+            bright_magenta: "#efb4c2".into(),
+            bright_cyan: "#a3ded4".into(),
+            bright_white: "#f5efe6".into(),
+        }
+    }
+}
+
+impl ComponentStyle {
+    fn jx_theme() -> Self {
+        Self {
+            app_title: Some(Style::default().fg(StyleColor::Blue).modifiers([StyleModifier::Bold])),
+            playback_status: Some(
+                Style::default()
+                    .fg(StyleColor::Cyan)
+                    .modifiers([StyleModifier::Bold]),
+            ),
+            playback_track: Some(
+                Style::default()
+                    .fg(StyleColor::Cyan)
+                    .modifiers([StyleModifier::Bold]),
+            ),
+            playback_artists: Some(
+                Style::default()
+                    .fg(StyleColor::BrightBlue)
+                    .modifiers([StyleModifier::Bold]),
+            ),
+            playback_album: Some(Style::default().fg(StyleColor::Yellow)),
+            playback_genres: Some(
+                Style::default()
+                    .fg(StyleColor::BrightBlack)
+                    .modifiers([StyleModifier::Italic]),
+            ),
+            playback_metadata: Some(Style::default().fg(StyleColor::BrightBlack)),
+            playback_progress_bar_unfilled: Some(Style::default().bg(StyleColor::BrightBlack)),
+            current_playing: Some(
+                Style::default()
+                    .fg(StyleColor::Green)
+                    .modifiers([StyleModifier::Bold]),
+            ),
+            page_desc: Some(
+                Style::default()
+                    .fg(StyleColor::Blue)
+                    .modifiers([StyleModifier::Bold]),
+            ),
+            playlist_desc: Some(
+                Style::default()
+                    .fg(StyleColor::BrightBlack)
+                    .modifiers([StyleModifier::Dim]),
+            ),
+            table_header: Some(Style::default().fg(StyleColor::Cyan)),
+            selection: Some(
+                Style::default()
+                    .bg(StyleColor::BrightBlack)
+                    .fg(StyleColor::White)
+                    .modifiers([StyleModifier::Bold]),
+            ),
+            secondary_row: Some(Style::default().fg(StyleColor::BrightBlack)),
+            like: Some(
+                Style::default()
+                    .fg(StyleColor::Magenta)
+                    .modifiers([StyleModifier::Bold]),
+            ),
+            lyrics_played: Some(Style::default().modifiers([StyleModifier::Dim])),
+            lyrics_playing: Some(
+                Style::default()
+                    .fg(StyleColor::Green)
+                    .modifiers([StyleModifier::Bold]),
+            ),
         }
     }
 }
