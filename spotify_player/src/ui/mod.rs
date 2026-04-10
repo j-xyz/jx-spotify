@@ -251,18 +251,17 @@ fn render_app_chrome(
     ])
     .split(top);
     let top_chunks = Layout::horizontal([
+        Constraint::Length(2),
         Constraint::Length(badge.chars().count() as u16),
         Constraint::Fill(0),
     ])
     .split(top_rows[1]);
+    frame.render_widget(Paragraph::new(""), top_chunks[0]);
     frame.render_widget(
-        Paragraph::new(Span::styled(
-            badge,
-            ui.theme.app_title().patch(ui.theme.app()),
-        )),
-        top_chunks[0],
+        Paragraph::new(Span::styled(badge, ui.theme.app_title_badge())),
+        top_chunks[1],
     );
-    frame.render_widget(Paragraph::new(""), top_chunks[1]);
+    frame.render_widget(Paragraph::new(""), top_chunks[2]);
 
     if ui.footer_help_preview_visible {
         let footer_chunks =

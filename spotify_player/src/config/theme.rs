@@ -179,6 +179,26 @@ impl Theme {
             .style(&self.palette)
     }
 
+    pub fn app_title_badge(&self) -> style::Style {
+        let title = self.component_style.app_title.clone().unwrap_or_else(|| {
+            Style::default()
+                .fg(StyleColor::BrightBlue)
+                .modifiers([StyleModifier::Bold])
+        });
+        let fill = title
+            .fg
+            .unwrap_or(StyleColor::BrightBlue)
+            .color(&self.palette);
+        let text = title
+            .bg
+            .map(|color| color.color(&self.palette))
+            .or_else(|| self.palette.background.as_ref().map(|color| color.color))
+            .or_else(|| self.palette.foreground.as_ref().map(|color| color.color))
+            .unwrap_or(style::Color::Reset);
+
+        self.app_title().fg(text).bg(fill)
+    }
+
     pub fn app(&self) -> style::Style {
         let mut style = style::Style::default();
         if let Some(ref c) = self.palette.background {
@@ -637,7 +657,11 @@ impl Palette {
 impl ComponentStyle {
     fn jx_theme() -> Self {
         Self {
-            app_title: Some(Style::default().fg(StyleColor::Blue).modifiers([StyleModifier::Bold])),
+            app_title: Some(
+                Style::default()
+                    .fg(StyleColor::Blue)
+                    .modifiers([StyleModifier::Bold]),
+            ),
             playback_status: Some(
                 Style::default()
                     .fg(StyleColor::Cyan)

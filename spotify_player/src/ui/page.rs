@@ -804,7 +804,7 @@ fn search_tui_highlight_symbol(theme: &config::Theme, is_active: bool) -> Line<'
     } else {
         Style::default()
     };
-    Line::from(vec![Span::styled("| ", symbol_style)])
+    Line::from(vec![Span::styled(" |", symbol_style)])
 }
 
 #[derive(Debug)]

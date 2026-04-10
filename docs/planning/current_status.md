@@ -58,3 +58,7 @@
 - Last verification: `cargo check --manifest-path /Users/jane/jxyz/maeve/projects/jx-spotify/spotify_player/Cargo.toml` passed after the SearchTui chrome/alignment refinement.
 - SearchTui spacing polish landed (2026-04-10): header/query text shifted one column left to sit directly under the `jx-spotify` badge rhythm, and the selected-row marker now renders as `| ` so it keeps a visible space before the row glyph.
 - Last verification: `cargo check --manifest-path /Users/jane/jxyz/maeve/projects/jx-spotify/spotify_player/Cargo.toml` passed after the SearchTui spacing polish.
+- SearchTui shape polish landed (2026-04-10): the filled `jx-spotify` badge now starts two columns into the shell to match the page text rhythm, and the selected-row marker now occupies the column immediately left of the row glyph column (`.|'selected row` in the alignment shorthand) instead of sitting flush against the shell edge.
+- Last verification: `cargo check --manifest-path /Users/jane/jxyz/maeve/projects/jx-spotify/spotify_player/Cargo.toml` passed after the SearchTui shape polish.
+- SearchTui badge fill polish landed (2026-04-10): the `jx-spotify` badge now uses an inverted filled badge treatment derived from the theme token itself, so the accent color fills the badge and the app background color becomes the badge text instead of leaving the normal surface background behind.
+- Last verification: `cargo check --manifest-path /Users/jane/jxyz/maeve/projects/jx-spotify/spotify_player/Cargo.toml` passed after restoring the inverted badge fill.
