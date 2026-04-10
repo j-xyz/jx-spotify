@@ -1,5 +1,6 @@
 # Current Status
 
+- Phase 0 `jx-ui` fixture anchoring landed: `content_shell_rect` is now explicitly treated as the suite's default-shell reference, and the shell-width matrix for `100x32`, `120x36`, `140x40`, and `180x48` is locked into unit tests.
 - Radio stability audit landed in commit `341dcb6` (`fix: stabilize radio shortcut flows`).
 - Key invariant: do not hold `state.player` or `state.data` read locks across `GoToRadio` dispatch, because radio navigation persists local state (`last_radio_tracks_id`) before pushing the new context page.
 - Follow-up audit across the broader `go to` family found the same deadlock pattern was radio-specific: other `go to` flows (`GoToAlbum`, `GoToArtist`, `GoToShow`, global page switches, search/list context opens) either operate on owned values first or only push UI/navigation state and let the page-change handler fetch context data afterward.
@@ -62,3 +63,5 @@
 - Last verification: `cargo check --manifest-path /Users/jane/jxyz/maeve/projects/jx-spotify/spotify_player/Cargo.toml` passed after the SearchTui shape polish.
 - SearchTui badge fill polish landed (2026-04-10): the `jx-spotify` badge now uses an inverted filled badge treatment derived from the theme token itself, so the accent color fills the badge and the app background color becomes the badge text instead of leaving the normal surface background behind.
 - Last verification: `cargo check --manifest-path /Users/jane/jxyz/maeve/projects/jx-spotify/spotify_player/Cargo.toml` passed after restoring the inverted badge fill.
+- Last verification: `cargo test shell_fixture_matrix_matches_phase_zero_expectations --manifest-path /Users/jane/jxyz/maeve/projects/jx-spotify/spotify_player/Cargo.toml` passed after adding the shared Phase 0 shell matrix expectations.
+- Next slice: use the new Phase 0 fixture pack plus a live SearchTui pass at `100x32`, `120x36`, `140x40`, and `180x48` before moving into broader badge/header convergence or popup-sheet work.

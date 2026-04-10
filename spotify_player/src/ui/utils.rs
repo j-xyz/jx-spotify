@@ -237,4 +237,22 @@ mod tests {
         assert_eq!(shell.width, 118);
         assert_eq!(shell.x, 2);
     }
+
+    #[test]
+    fn shell_fixture_matrix_matches_phase_zero_expectations() {
+        let cases = [
+            (100, 32, 100, 0),
+            (120, 36, 116, 2),
+            (140, 40, 136, 2),
+            (180, 48, 140, 20),
+        ];
+
+        for (width, height, expected_width, expected_x) in cases {
+            let shell = content_shell_rect(Rect::new(0, 0, width, height));
+
+            assert_eq!(shell.width, expected_width, "unexpected shell width for {width}x{height}");
+            assert_eq!(shell.x, expected_x, "unexpected shell x for {width}x{height}");
+            assert_eq!(shell.height, height, "unexpected shell height for {width}x{height}");
+        }
+    }
 }
