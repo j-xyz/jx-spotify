@@ -7,6 +7,7 @@ use unicode_bidi::BidiInfo;
 const SHELL_WIDE_THRESHOLD: u16 = 120;
 const SHELL_MAX_WIDTH: u16 = 140;
 const SHELL_MIN_SIDE_PADDING: u16 = 2;
+const SHELL_TEXT_INSET: u16 = 2;
 
 pub fn content_shell_rect(rect: Rect) -> Rect {
     if rect.width < SHELL_WIDE_THRESHOLD {
@@ -21,6 +22,29 @@ pub fn content_shell_rect(rect: Rect) -> Rect {
     let x = rect.x + (rect.width.saturating_sub(width)) / 2;
 
     Rect::new(x, rect.y, width, rect.height)
+}
+
+pub fn inset_rect(rect: Rect, inset: u16) -> Rect {
+    Rect::new(
+        rect.x.saturating_add(inset),
+        rect.y,
+        rect.width.saturating_sub(inset),
+        rect.height,
+    )
+}
+
+pub fn shell_text_rect(rect: Rect) -> Rect {
+    inset_rect(rect, SHELL_TEXT_INSET)
+}
+
+pub fn app_badge_rect(rect: Rect, badge_width: u16) -> Rect {
+    let text_rect = shell_text_rect(rect);
+    Rect::new(
+        text_rect.x,
+        text_rect.y,
+        badge_width.min(text_rect.width),
+        text_rect.height,
+    )
 }
 
 pub fn panel_style(theme: &config::Theme) -> Style {
@@ -50,6 +74,7 @@ pub fn render_section_header<'a>(
     meta: Option<Line<'a>>,
     is_active: bool,
 ) {
+    let rect = shell_text_rect(rect);
     let title_style = if is_active {
         theme.page_desc()
     } else {
@@ -250,9 +275,48 @@ mod tests {
         for (width, height, expected_width, expected_x) in cases {
             let shell = content_shell_rect(Rect::new(0, 0, width, height));
 
-            assert_eq!(shell.width, expected_width, "unexpected shell width for {width}x{height}");
-            assert_eq!(shell.x, expected_x, "unexpected shell x for {width}x{height}");
-            assert_eq!(shell.height, height, "unexpected shell height for {width}x{height}");
+            assert_eq!(
+                shell.width, expected_width,
+                "unexpected shell width for {width}x{height}"
+            );
+            assert_eq!(
+                shell.x, expected_x,
+                "unexpected shell x for {width}x{height}"
+            );
+            assert_eq!(
+                shell.height, height,
+                "unexpected shell height for {width}x{height}"
+            );
+        }
+    }
+
+    #[test]
+    fn app_chrome_alignment_matches_phase_zero_shell_matrix() {
+        let badge_width = " jx-spotify ".chars().count() as u16;
+        let cases = [(100, 32, 2), (120, 36, 4), (140, 40, 4), (180, 48, 22)];
+
+        for (width, height, expected_text_x) in cases {
+            let shell = content_shell_rect(Rect::new(0, 0, width, height));
+            let text_rect = shell_text_rect(shell);
+            let badge_rect = app_badge_rect(shell, badge_width);
+
+            assert_eq!(
+                text_rect.x, expected_text_x,
+                "unexpected section text inset for {width}x{height}"
+            );
+            assert_eq!(
+                badge_rect.x, expected_text_x,
+                "unexpected badge inset for {width}x{height}"
+            );
+            assert_eq!(
+                text_rect.width,
+                shell.width.saturating_sub(SHELL_TEXT_INSET),
+                "unexpected text width for {width}x{height}"
+            );
+            assert_eq!(
+                badge_rect.width, badge_width,
+                "unexpected badge width for {width}x{height}"
+            );
         }
     }
 }

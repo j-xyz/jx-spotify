@@ -25,7 +25,6 @@ use crate::ui::utils::to_bidi_string;
 const COMMAND_TABLE_CONSTRAINTS: [Constraint; 2] =
     [Constraint::Percentage(28), Constraint::Percentage(72)];
 const SEARCH_TUI_HEADER_HEIGHT: u16 = 1;
-const SEARCH_TUI_TEXT_START_OFFSET: u16 = 2;
 const SEARCH_TUI_QUERY_SHELF_HEIGHT: u16 = 2;
 const SEARCH_TUI_SECTION_GAP_HEIGHT: u16 = 1;
 const SEARCH_TUI_SECTION_GAP_THRESHOLD: u16 = 10;
@@ -586,7 +585,7 @@ pub fn render_search_tui_page(
 
     render_search_tui_header(
         frame,
-        search_tui_header_rect(layout[0]),
+        layout[0],
         &title,
         Some(search_tui_results_meta_line(items.len(), source, ui)),
         is_active && focus == SearchTuiFocus::Results,
@@ -621,17 +620,10 @@ pub fn render_search_tui_page(
                     .app()
                     .patch(ui.theme.playback_progress_bar_unfilled()),
             ),
-            search_tui_header_rect(query_rect),
+            search_tui_text_rect(query_rect),
         );
 
-        let input_rect = Rect::new(
-            query_rect.x.saturating_add(SEARCH_TUI_TEXT_START_OFFSET),
-            query_rect.y.saturating_add(1),
-            query_rect
-                .width
-                .saturating_sub(SEARCH_TUI_TEXT_START_OFFSET),
-            query_rect.height.saturating_sub(1),
-        );
+        let input_rect = search_tui_query_input_rect(query_rect);
         frame.render_widget(
             line_input.widget(is_active && focus == SearchTuiFocus::Search),
             input_rect,
@@ -665,12 +657,17 @@ fn search_tui_results_meta_line(
     Line::from(spans)
 }
 
-fn search_tui_header_rect(rect: Rect) -> Rect {
+fn search_tui_text_rect(rect: Rect) -> Rect {
+    utils::shell_text_rect(rect)
+}
+
+fn search_tui_query_input_rect(rect: Rect) -> Rect {
+    let text_rect = search_tui_text_rect(rect);
     Rect::new(
-        rect.x.saturating_add(SEARCH_TUI_TEXT_START_OFFSET),
-        rect.y,
-        rect.width.saturating_sub(SEARCH_TUI_TEXT_START_OFFSET),
-        rect.height,
+        text_rect.x,
+        rect.y.saturating_add(1),
+        text_rect.width,
+        rect.height.saturating_sub(1),
     )
 }
 
@@ -1777,7 +1774,11 @@ fn format_shortcuts(shortcuts: &[&str]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{split_row_right_layout, Rect, SplitRowRightLayout, SplitRowRightMeta};
+    use super::{
+        search_tui_query_input_rect, search_tui_text_rect, split_row_right_layout, Rect,
+        SplitRowRightLayout, SplitRowRightMeta, SEARCH_TUI_QUERY_SHELF_HEIGHT,
+    };
+    use crate::ui::utils;
 
     #[test]
     fn right_meta_layout_expands_when_row_has_room() {
@@ -1820,6 +1821,37 @@ mod tests {
         assert_eq!(rendered.chars().count(), 24);
         assert!(rendered.ends_with("5m 8s"));
         assert!(rendered.contains("..."));
+    }
+
+    #[test]
+    fn search_tui_text_and_query_shelf_follow_shell_rhythm() {
+        let cases = [(100, 32, 2), (120, 36, 4), (140, 40, 4), (180, 48, 22)];
+
+        for (width, height, expected_text_x) in cases {
+            let shell = utils::content_shell_rect(Rect::new(0, 0, width, height));
+            let query_rect = Rect::new(shell.x, 7, shell.width, SEARCH_TUI_QUERY_SHELF_HEIGHT);
+            let text_rect = search_tui_text_rect(shell);
+            let input_rect = search_tui_query_input_rect(query_rect);
+
+            assert_eq!(
+                text_rect.x, expected_text_x,
+                "unexpected SearchTui header inset for {width}x{height}"
+            );
+            assert_eq!(
+                input_rect.x, expected_text_x,
+                "unexpected SearchTui query inset for {width}x{height}"
+            );
+            assert_eq!(
+                input_rect.width,
+                shell.width.saturating_sub(2),
+                "unexpected SearchTui query width for {width}x{height}"
+            );
+            assert_eq!(
+                input_rect.y,
+                query_rect.y + 1,
+                "unexpected SearchTui query y for {width}x{height}"
+            );
+        }
     }
 }
 
