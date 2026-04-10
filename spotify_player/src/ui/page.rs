@@ -14,9 +14,9 @@ use crate::{
 };
 
 use super::{
-    config, utils, Album, Alignment, Artist, ArtistFocusState, Block, BrowsePageUIState, Cell,
-    Constraint, Context, ContextPageUIState, DataReadGuard, Frame, Id, Layout, LibraryFocusState,
-    Modifier, MutableWindowState, Orientation, PageState, Paragraph, PlaylistFolderItem, Rect, Row,
+    config, utils, Album, Alignment, Artist, ArtistFocusState, BrowsePageUIState, Cell, Constraint,
+    Context, ContextPageUIState, DataReadGuard, Frame, Id, Layout, LibraryFocusState, Modifier,
+    MutableWindowState, Orientation, PageState, Paragraph, PlaylistFolderItem, Rect, Row,
     SearchFocusState, SharedState, Span, Style, Table, Text, Track, UIStateGuard,
 };
 use crate::state::BidiDisplay;
@@ -24,6 +24,11 @@ use crate::ui::utils::to_bidi_string;
 
 const COMMAND_TABLE_CONSTRAINTS: [Constraint; 2] =
     [Constraint::Percentage(28), Constraint::Percentage(72)];
+const SEARCH_TUI_HEADER_HEIGHT: u16 = 1;
+const SEARCH_TUI_TEXT_START_OFFSET: u16 = 2;
+const SEARCH_TUI_QUERY_SHELF_HEIGHT: u16 = 2;
+const SEARCH_TUI_SECTION_GAP_HEIGHT: u16 = 1;
+const SEARCH_TUI_SECTION_GAP_THRESHOLD: u16 = 10;
 const SPLIT_ROW_MIN_RIGHT_WIDTH: u16 = 12;
 const SPLIT_ROW_RESERVED_LEFT_WIDTH: u16 = 10;
 
@@ -203,6 +208,10 @@ fn track_right_meta(track: &Track, include_album: bool) -> SplitRowRightMeta {
     } else {
         SplitRowRightMeta::plain(duration)
     }
+}
+
+fn search_tui_workspace_rect(rect: Rect) -> Rect {
+    rect
 }
 
 // UI codes to render a page.
@@ -532,7 +541,11 @@ pub fn render_search_tui_page(
                 (
                     "Search Results".to_string(),
                     results.source,
-                    results.items.into_iter().map(Into::into).collect(),
+                    results
+                        .items
+                        .into_iter()
+                        .map(|item| SearchTuiDisplayRow::from_item(item, &data))
+                        .collect(),
                 )
             }
             SearchTuiMode::Playlist { title, .. }
@@ -542,45 +555,90 @@ pub fn render_search_tui_page(
                 search_tui::SearchTuiResultsSource::Standard,
                 search_tui::build_context_tracks(&data, &mode, &query)
                     .into_iter()
-                    .map(search_tui_playlist_row)
+                    .map(|track| search_tui_playlist_row(track, &data))
                     .collect::<Vec<_>>(),
             ),
         }
     };
 
     let search_visible = focus == SearchTuiFocus::Search || !query.is_empty();
-    let chunks = if search_visible {
-        Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Fill(0),
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ])
-        .split(rect)
+    let workspace = search_tui_workspace_rect(rect);
+    let gap_height = if workspace.height >= SEARCH_TUI_SECTION_GAP_THRESHOLD {
+        SEARCH_TUI_SECTION_GAP_HEIGHT
     } else {
-        Layout::vertical([Constraint::Length(1), Constraint::Fill(0)]).split(rect)
+        0
+    };
+    let layout = if search_visible {
+        Layout::vertical([
+            Constraint::Length(SEARCH_TUI_HEADER_HEIGHT),
+            Constraint::Min(1),
+            Constraint::Length(gap_height),
+            Constraint::Length(SEARCH_TUI_QUERY_SHELF_HEIGHT),
+        ])
+        .split(workspace)
+    } else {
+        Layout::vertical([
+            Constraint::Length(SEARCH_TUI_HEADER_HEIGHT),
+            Constraint::Min(1),
+        ])
+        .split(workspace)
     };
 
-    render_search_tui_label(
+    render_search_tui_header(
         frame,
-        chunks[0],
+        search_tui_header_rect(layout[0]),
         &title,
         Some(search_tui_results_meta_line(items.len(), source, ui)),
-        focus == SearchTuiFocus::Results,
+        is_active && focus == SearchTuiFocus::Results,
         ui,
     );
-    render_search_tui_results(frame, chunks[1], items, is_active, focus, ui);
+
+    let results_rect = layout[1];
 
     if search_visible {
-        render_search_tui_search_header(frame, chunks[2], &mode, focus, ui);
+        let query_rect = layout[3];
+        frame.render_widget(
+            Paragraph::new(Text::from(vec![
+                Line::from(vec![
+                    Span::styled(
+                        "search",
+                        if is_active && focus == SearchTuiFocus::Search {
+                            ui.theme.page_desc()
+                        } else {
+                            ui.theme.playback_metadata()
+                        },
+                    ),
+                    Span::styled("  ", ui.theme.playback_metadata()),
+                    Span::styled(
+                        search_tui_sigil_meta_line(&mode),
+                        ui.theme.playback_metadata(),
+                    ),
+                ]),
+                Line::default(),
+            ]))
+            .style(
+                ui.theme
+                    .app()
+                    .patch(ui.theme.playback_progress_bar_unfilled()),
+            ),
+            search_tui_header_rect(query_rect),
+        );
 
-        let search_box_style = ui.theme.playback_progress_bar_unfilled();
-        frame.render_widget(Block::default().style(search_box_style), chunks[3]);
+        let input_rect = Rect::new(
+            query_rect.x.saturating_add(SEARCH_TUI_TEXT_START_OFFSET),
+            query_rect.y.saturating_add(1),
+            query_rect
+                .width
+                .saturating_sub(SEARCH_TUI_TEXT_START_OFFSET),
+            query_rect.height.saturating_sub(1),
+        );
         frame.render_widget(
             line_input.widget(is_active && focus == SearchTuiFocus::Search),
-            chunks[3],
+            input_rect,
         );
     }
+
+    render_search_tui_results(frame, results_rect, items, is_active, focus, ui);
 }
 
 fn search_tui_results_meta_line(
@@ -607,7 +665,16 @@ fn search_tui_results_meta_line(
     Line::from(spans)
 }
 
-fn render_search_tui_label(
+fn search_tui_header_rect(rect: Rect) -> Rect {
+    Rect::new(
+        rect.x.saturating_add(SEARCH_TUI_TEXT_START_OFFSET),
+        rect.y,
+        rect.width.saturating_sub(SEARCH_TUI_TEXT_START_OFFSET),
+        rect.height,
+    )
+}
+
+fn render_search_tui_header(
     frame: &mut Frame,
     rect: Rect,
     title: &str,
@@ -618,30 +685,58 @@ fn render_search_tui_label(
     utils::render_section_header(frame, &ui.theme, rect, title, meta, is_active);
 }
 
-fn render_search_tui_search_header(
-    frame: &mut Frame,
-    rect: Rect,
-    mode: &SearchTuiMode,
-    focus: SearchTuiFocus,
-    ui: &UIStateGuard,
-) {
-    render_search_tui_label(
-        frame,
-        rect,
-        "Search",
-        Some(search_tui_sigil_meta_line(mode)),
-        focus == SearchTuiFocus::Search,
-        ui,
-    );
-}
-
-fn search_tui_sigil_meta_line(mode: &SearchTuiMode) -> Line<'static> {
+fn search_tui_sigil_meta_line(mode: &SearchTuiMode) -> &'static str {
     match mode {
-        SearchTuiMode::Global => Line::from("! album  @ artist  $ song"),
+        SearchTuiMode::Global => "! album  @ artist  $ song",
         SearchTuiMode::Playlist { .. }
         | SearchTuiMode::Album { .. }
-        | SearchTuiMode::Artist { .. } => Line::from("! album  @ artist  $ song"),
+        | SearchTuiMode::Artist { .. } => "! album  @ artist  $ song",
     }
+}
+
+fn search_tui_left_line(row: &SearchTuiDisplayRow, ui: &UIStateGuard) -> Line<'static> {
+    let glyph_style = if row.is_liked {
+        if row.is_selected {
+            ui.theme.like().add_modifier(Modifier::BOLD)
+        } else {
+            ui.theme.like().add_modifier(Modifier::DIM)
+        }
+    } else if row.is_selected {
+        ui.theme.page_desc()
+    } else {
+        ui.theme.playback_metadata()
+    };
+    let main_style = if row.is_current {
+        ui.theme.current_playing()
+    } else {
+        Style::default()
+    };
+    let title_style = if row.title_bold {
+        main_style.add_modifier(Modifier::BOLD)
+    } else {
+        main_style
+    };
+    let secondary_style = if row.is_current {
+        ui.theme.current_playing()
+    } else {
+        ui.theme.playlist_desc()
+    };
+
+    let mut spans = vec![
+        Span::styled(row.glyph().to_string(), glyph_style),
+        Span::styled(" ", glyph_style),
+        Span::styled(to_bidi_string(&row.title), title_style),
+    ];
+    if let Some(subtitle) = row
+        .subtitle
+        .as_deref()
+        .filter(|subtitle| !subtitle.is_empty())
+    {
+        spans.push(Span::styled(" - ", secondary_style));
+        spans.push(Span::styled(to_bidi_string(subtitle), secondary_style));
+    }
+
+    Line::from(spans)
 }
 
 fn render_search_tui_results(
@@ -652,8 +747,10 @@ fn render_search_tui_results(
     focus: SearchTuiFocus,
     ui: &mut UIStateGuard,
 ) {
-    frame.render_widget(Block::default().style(ui.theme.app()), rect);
-
+    let selected_row = match ui.current_page() {
+        PageState::SearchTui { state, .. } => state.result_list.selected(),
+        _ => None,
+    };
     let right_meta_values = items
         .iter()
         .map(|row| row.right_meta.clone())
@@ -661,20 +758,11 @@ fn render_search_tui_results(
     let right_layout = split_row_right_layout(&right_meta_values, rect);
     let rows = items
         .into_iter()
-        .map(|row| {
-            let main_style = if row.is_current {
-                ui.theme.current_playing()
-            } else {
-                Style::default()
-            };
-            let title_style = if row.playlist_title_bold {
-                main_style.add_modifier(Modifier::BOLD)
-            } else {
-                main_style
-            };
-            let left = vec![Span::styled(to_bidi_string(&row.title), title_style)];
+        .enumerate()
+        .map(|(index, mut row)| {
+            row.is_selected = selected_row == Some(index);
             Row::new(vec![
-                Cell::from(Line::from(left)),
+                Cell::from(search_tui_left_line(&row, ui)),
                 Cell::from(row.right_meta.render(right_layout))
                     .style(ui.theme.playlist_desc().add_modifier(Modifier::ITALIC)),
             ])
@@ -689,7 +777,7 @@ fn render_search_tui_results(
         ],
     )
     .column_spacing(1)
-    .highlight_symbol(utils::highlight_symbol(
+    .highlight_symbol(search_tui_highlight_symbol(
         &ui.theme,
         is_active && focus == SearchTuiFocus::Results,
     ))
@@ -697,7 +785,6 @@ fn render_search_tui_results(
         ui.theme
             .app()
             .patch(ui.theme.playback_progress_bar_unfilled())
-            .add_modifier(Modifier::BOLD)
     } else {
         Style::default()
     });
@@ -711,77 +798,114 @@ fn render_search_tui_results(
     utils::render_table_window(frame, table, rect, len, &mut page_state.result_list);
 }
 
+fn search_tui_highlight_symbol(theme: &config::Theme, is_active: bool) -> Line<'static> {
+    let symbol_style = if is_active {
+        theme.playback_status()
+    } else {
+        Style::default()
+    };
+    Line::from(vec![Span::styled("| ", symbol_style)])
+}
+
 #[derive(Debug)]
 struct SearchTuiDisplayRow {
     title: String,
+    subtitle: Option<String>,
     right_meta: SplitRowRightMeta,
     is_current: bool,
-    playlist_title_bold: bool,
+    is_liked: bool,
+    is_selected: bool,
+    title_bold: bool,
 }
 
-impl From<search_tui::SearchTuiItem> for SearchTuiDisplayRow {
-    fn from(item: search_tui::SearchTuiItem) -> Self {
+impl SearchTuiDisplayRow {
+    fn from_item(item: search_tui::SearchTuiItem, data: &DataReadGuard) -> Self {
         match item {
             search_tui::SearchTuiItem::Track { track } => {
                 let album = track.album_info();
                 let duration = format_duration_hms(
                     &chrono::Duration::from_std(track.duration).unwrap_or_default(),
                 );
+                let is_liked = data.user_data.is_liked_track(&track);
                 Self {
-                    title: format!("{} - {}", track.display_name(), track.artists_info()),
+                    title: track.display_name().to_string(),
+                    subtitle: Some(track.artists_info()),
                     right_meta: if album.is_empty() {
                         SplitRowRightMeta::plain(duration)
                     } else {
                         SplitRowRightMeta::pair(to_bidi_string(&album), duration)
                     },
                     is_current: false,
-                    playlist_title_bold: false,
+                    is_liked,
+                    is_selected: false,
+                    title_bold: false,
                 }
             }
             search_tui::SearchTuiItem::Artist { artist } => Self {
                 title: artist.name,
+                subtitle: None,
                 right_meta: SplitRowRightMeta::plain("artist"),
                 is_current: false,
-                playlist_title_bold: false,
+                is_liked: false,
+                is_selected: false,
+                title_bold: false,
             },
-            search_tui::SearchTuiItem::Album { album } => Self {
-                title: format!(
-                    "{} - {}",
-                    album.name,
-                    album
-                        .artists
-                        .iter()
-                        .map(|a| a.name.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ),
-                right_meta: SplitRowRightMeta::plain(format!("album {}", album.year())),
-                is_current: false,
-                playlist_title_bold: false,
-            },
+            search_tui::SearchTuiItem::Album { album } => {
+                let year = album.year();
+                Self {
+                    title: album.name,
+                    subtitle: Some(
+                        album
+                            .artists
+                            .iter()
+                            .map(|a| a.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    ),
+                    right_meta: SplitRowRightMeta::plain(format!("album {year}")),
+                    is_current: false,
+                    is_liked: false,
+                    is_selected: false,
+                    title_bold: false,
+                }
+            }
             search_tui::SearchTuiItem::Playlist { playlist } => Self {
                 title: playlist.name,
+                subtitle: None,
                 right_meta: SplitRowRightMeta::plain(format!("playlist {}", playlist.owner.0)),
                 is_current: false,
-                playlist_title_bold: true,
+                is_liked: false,
+                is_selected: false,
+                title_bold: true,
             },
+        }
+    }
+
+    fn glyph(&self) -> &str {
+        if self.is_liked {
+            &config::get_config().app_config.liked_icon
+        } else {
+            "·"
         }
     }
 }
 
-fn search_tui_playlist_row(track: Track) -> SearchTuiDisplayRow {
+fn search_tui_playlist_row(track: Track, data: &DataReadGuard) -> SearchTuiDisplayRow {
     let album = track.album_info();
     let duration =
         format_duration_hms(&chrono::Duration::from_std(track.duration).unwrap_or_default());
     SearchTuiDisplayRow {
-        title: format!("{} - {}", track.display_name(), track.artists_info()),
+        title: track.display_name().to_string(),
+        subtitle: Some(track.artists_info()),
         right_meta: if album.is_empty() {
             SplitRowRightMeta::plain(duration)
         } else {
             SplitRowRightMeta::pair(to_bidi_string(&album), duration)
         },
         is_current: false,
-        playlist_title_bold: false,
+        is_liked: data.user_data.is_liked_track(&track),
+        is_selected: false,
+        title_bold: false,
     }
 }
 

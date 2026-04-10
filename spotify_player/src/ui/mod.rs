@@ -195,7 +195,7 @@ fn render_application(frame: &mut Frame, state: &SharedState, ui: &mut UIStateGu
 
     let footer_rows: u16 = if ui.footer_help_preview_visible { 2 } else { 1 };
     let chunks = Layout::vertical([
-        Constraint::Length(1),
+        Constraint::Length(3),
         Constraint::Fill(0),
         Constraint::Length(footer_rows),
     ])
@@ -243,9 +243,23 @@ fn render_app_chrome(
     top: Rect,
     footer: Rect,
 ) {
-    let top_chunks = Layout::horizontal([Constraint::Length(11), Constraint::Fill(0)]).split(top);
+    let badge = " jx-spotify ";
+    let top_rows = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Length(1),
+    ])
+    .split(top);
+    let top_chunks = Layout::horizontal([
+        Constraint::Length(badge.chars().count() as u16),
+        Constraint::Fill(0),
+    ])
+    .split(top_rows[1]);
     frame.render_widget(
-        Paragraph::new(Span::styled("jx-spotify", ui.theme.app_title())),
+        Paragraph::new(Span::styled(
+            badge,
+            ui.theme.app_title().patch(ui.theme.app()),
+        )),
         top_chunks[0],
     );
     frame.render_widget(Paragraph::new(""), top_chunks[1]);
