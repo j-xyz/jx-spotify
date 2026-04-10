@@ -4,6 +4,25 @@ use super::{
 };
 use unicode_bidi::BidiInfo;
 
+const SHELL_WIDE_THRESHOLD: u16 = 120;
+const SHELL_MAX_WIDTH: u16 = 140;
+const SHELL_MIN_SIDE_PADDING: u16 = 2;
+
+pub fn content_shell_rect(rect: Rect) -> Rect {
+    if rect.width < SHELL_WIDE_THRESHOLD {
+        return rect;
+    }
+
+    let bounded_width = rect.width.min(SHELL_MAX_WIDTH);
+    let max_width_with_padding = rect
+        .width
+        .saturating_sub(SHELL_MIN_SIDE_PADDING.saturating_mul(2));
+    let width = bounded_width.min(max_width_with_padding).max(1);
+    let x = rect.x + (rect.width.saturating_sub(width)) / 2;
+
+    Rect::new(x, rect.y, width, rect.height)
+}
+
 pub fn panel_style(theme: &config::Theme) -> Style {
     theme.app()
 }
@@ -189,4 +208,33 @@ pub fn format_genres(genres: &[String], genre_num: u8) -> String {
     }
 
     genre_str
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shell_stays_full_width_on_mid_size_terminal() {
+        let rect = Rect::new(0, 0, 100, 30);
+        assert_eq!(content_shell_rect(rect), rect);
+    }
+
+    #[test]
+    fn shell_is_centered_and_bounded_on_wide_terminal() {
+        let rect = Rect::new(0, 0, 180, 40);
+        let shell = content_shell_rect(rect);
+
+        assert_eq!(shell.width, SHELL_MAX_WIDTH);
+        assert_eq!(shell.x, 20);
+    }
+
+    #[test]
+    fn shell_preserves_side_padding_even_when_max_width_is_not_hit() {
+        let rect = Rect::new(0, 0, 122, 35);
+        let shell = content_shell_rect(rect);
+
+        assert_eq!(shell.width, 118);
+        assert_eq!(shell.x, 2);
+    }
 }

@@ -201,9 +201,13 @@ fn render_application(frame: &mut Frame, state: &SharedState, ui: &mut UIStateGu
     ])
     .split(rect);
 
-    render_app_chrome(frame, state, ui, chunks[0], chunks[2]);
+    let top_shell = utils::content_shell_rect(chunks[0]);
+    let body_shell = utils::content_shell_rect(chunks[1]);
+    let footer_shell = utils::content_shell_rect(chunks[2]);
 
-    let rect = popup::render_shortcut_help_popup(frame, state, ui, chunks[1]);
+    render_app_chrome(frame, state, ui, top_shell, footer_shell);
+
+    let rect = popup::render_shortcut_help_popup(frame, state, ui, body_shell);
 
     let (rect, is_active) = popup::render_popup(frame, state, ui, rect);
 
