@@ -1,5 +1,5 @@
 use super::{
-    config, Alignment, Block, Constraint, Frame, Layout, Line, List, ListItem, ListState,
+    config, Alignment, Block, Constraint, Frame, Layout, Line, List, ListItem, ListState, Modifier,
     Paragraph, Rect, Span, Style, Table, TableState,
 };
 use unicode_bidi::BidiInfo;
@@ -45,6 +45,20 @@ pub fn app_badge_rect(rect: Rect, badge_width: u16) -> Rect {
         badge_width.min(text_rect.width),
         text_rect.height,
     )
+}
+
+fn normalize_gutter_selection_style(style: Style) -> Style {
+    let mut style = style.remove_modifier(Modifier::REVERSED);
+    style.bg = None;
+    style
+}
+
+pub fn gutter_selection_style(theme: &config::Theme, is_active: bool) -> Style {
+    if !is_active {
+        return Style::default();
+    }
+
+    normalize_gutter_selection_style(theme.selection(true))
 }
 
 pub fn panel_style(theme: &config::Theme) -> Style {
@@ -120,7 +134,7 @@ pub fn construct_list_widget<'a>(
                 .collect::<Vec<_>>(),
         )
         .highlight_symbol(highlight_symbol(theme, is_active))
-        .highlight_style(theme.selection(is_active)),
+        .highlight_style(gutter_selection_style(theme, is_active)),
         n_items,
     )
 }
@@ -318,5 +332,19 @@ mod tests {
                 "unexpected badge width for {width}x{height}"
             );
         }
+    }
+
+    #[test]
+    fn gutter_selection_style_drops_background_fill() {
+        let selection = Style::default()
+            .fg(ratatui::style::Color::White)
+            .bg(ratatui::style::Color::Black)
+            .add_modifier(Modifier::BOLD)
+            .add_modifier(Modifier::REVERSED);
+        let normalized = normalize_gutter_selection_style(selection);
+
+        assert_eq!(normalized.bg, None);
+        assert!(!normalized.add_modifier.contains(Modifier::REVERSED));
+        assert!(normalized.add_modifier.contains(Modifier::BOLD));
     }
 }

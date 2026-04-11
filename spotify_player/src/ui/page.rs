@@ -455,11 +455,10 @@ pub fn render_search_page(
         &ui.theme,
         is_active && focus_state == SearchFocusState::Tracks,
     ))
-    .row_highlight_style(if is_active && focus_state == SearchFocusState::Tracks {
-        ui.theme.selection(true)
-    } else {
-        Style::default()
-    });
+    .row_highlight_style(utils::gutter_selection_style(
+        &ui.theme,
+        is_active && focus_state == SearchFocusState::Tracks,
+    ));
 
     // Render the search result windows.
     // Need mutable access to the list/table states stored inside the page state for rendering.
@@ -699,12 +698,14 @@ fn search_tui_left_line(row: &SearchTuiDisplayRow, ui: &UIStateGuard) -> Line<'s
             ui.theme.like().add_modifier(Modifier::DIM)
         }
     } else if row.is_selected {
-        ui.theme.page_desc()
+        ui.theme.playback_status()
     } else {
         ui.theme.playback_metadata()
     };
     let main_style = if row.is_current {
         ui.theme.current_playing()
+    } else if row.is_selected {
+        ui.theme.page_desc()
     } else {
         Style::default()
     };
@@ -715,6 +716,8 @@ fn search_tui_left_line(row: &SearchTuiDisplayRow, ui: &UIStateGuard) -> Line<'s
     };
     let secondary_style = if row.is_current {
         ui.theme.current_playing()
+    } else if row.is_selected {
+        ui.theme.playback_metadata()
     } else {
         ui.theme.playlist_desc()
     };
@@ -778,13 +781,10 @@ fn render_search_tui_results(
         &ui.theme,
         is_active && focus == SearchTuiFocus::Results,
     ))
-    .row_highlight_style(if is_active && focus == SearchTuiFocus::Results {
-        ui.theme
-            .app()
-            .patch(ui.theme.playback_progress_bar_unfilled())
-    } else {
-        Style::default()
-    });
+    .row_highlight_style(utils::gutter_selection_style(
+        &ui.theme,
+        is_active && focus == SearchTuiFocus::Results,
+    ));
 
     let PageState::SearchTui {
         state: page_state, ..
@@ -2070,7 +2070,7 @@ fn render_artist_context_page_windows(
     )
     .column_spacing(2)
     .highlight_symbol(utils::highlight_symbol(&ui.theme, is_albums_active))
-    .row_highlight_style(ui.theme.selection(is_albums_active));
+    .row_highlight_style(utils::gutter_selection_style(&ui.theme, is_albums_active));
 
     // artist list widget
     let (artist_list, n_artists) = {
@@ -2206,7 +2206,7 @@ fn render_track_table(
     )
     .column_spacing(1)
     .highlight_symbol(utils::highlight_symbol(&ui.theme, is_active))
-    .row_highlight_style(ui.theme.selection(is_active));
+    .row_highlight_style(utils::gutter_selection_style(&ui.theme, is_active));
 
     if let PageState::Context {
         state: Some(state), ..
@@ -2298,7 +2298,7 @@ fn render_episode_table(
     )
     .column_spacing(2)
     .highlight_symbol(utils::highlight_symbol(&ui.theme, is_active))
-    .row_highlight_style(ui.theme.selection(is_active));
+    .row_highlight_style(utils::gutter_selection_style(&ui.theme, is_active));
 
     if let PageState::Context {
         state: Some(state), ..

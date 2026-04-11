@@ -67,7 +67,7 @@ bright_white = "#ffffff"
 [themes.component_style]
 subtle_panel = { bg = "#24252f" }
 like = { fg = "Red", modifiers = ["Bold"] }
-selection = { bg = "Black", fg = "White", modifiers = ["Bold"] }
+selection = { fg = "White", modifiers = ["Bold"] }
 secondary_row = { bg = "#677075" }
 
 [[themes]]
