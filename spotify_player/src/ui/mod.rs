@@ -252,9 +252,27 @@ fn render_app_chrome(
     ])
     .split(top);
     frame.render_widget(Paragraph::new(""), top_rows[1]);
+    let header_text_rect = utils::shell_text_rect(top_rows[1]);
+    let badge_rect = utils::app_badge_rect(top_rows[1], badge_width);
+    let detail_x = badge_rect.x.saturating_add(badge_rect.width);
+    let detail_width = header_text_rect
+        .x
+        .saturating_add(header_text_rect.width)
+        .saturating_sub(detail_x);
+    let detail_rect = Rect::new(
+        detail_x,
+        header_text_rect.y,
+        detail_width,
+        header_text_rect.height,
+    );
     frame.render_widget(
         Paragraph::new(Span::styled(badge, ui.theme.app_title_badge())),
-        utils::app_badge_rect(top_rows[1], badge_width),
+        badge_rect,
+    );
+    let header_line = app_header_line(ui, detail_rect.width as usize);
+    frame.render_widget(
+        Paragraph::new(Span::styled(header_line, ui.theme.playback_metadata())),
+        detail_rect,
     );
 
     if ui.footer_help_preview_visible {
@@ -294,6 +312,89 @@ fn render_app_chrome(
     }
 }
 
+fn app_header_line(ui: &UIStateGuard, max_chars: usize) -> String {
+    let (context, detail) = app_header_context_detail(ui);
+    compose_header_line(&context, &detail, max_chars)
+}
+
+fn app_header_context_detail(ui: &UIStateGuard) -> (String, String) {
+    match ui.current_page() {
+        PageState::Library { .. } => ("Library".to_string(), "playlists".to_string()),
+        PageState::Search { current_query, .. } => {
+            let detail = if current_query.is_empty() {
+                "results".to_string()
+            } else {
+                format!("results/{current_query}")
+            };
+            ("Search".to_string(), detail)
+        }
+        PageState::SearchTui {
+            state, line_input, ..
+        } => {
+            let mode = match &state.mode {
+                SearchTuiMode::Global => "global".to_string(),
+                SearchTuiMode::Playlist { title, .. } => format!("playlist/{title}"),
+                SearchTuiMode::Album { title, .. } => format!("album/{title}"),
+                SearchTuiMode::Artist { title, .. } => format!("artist/{title}"),
+            };
+            let query = line_input.get_text();
+            let detail = if query.is_empty() {
+                mode
+            } else {
+                format!("{mode}/{query}")
+            };
+            ("Search".to_string(), detail)
+        }
+        PageState::Context {
+            context_page_type, ..
+        } => ("Context".to_string(), context_page_type.title()),
+        PageState::Browse { .. } => ("Browse".to_string(), "catalog".to_string()),
+        PageState::Lyrics { track, artists, .. } => {
+            ("Lyrics".to_string(), format!("{track}/{artists}"))
+        }
+        PageState::Queue { .. } => ("Queue".to_string(), "up next".to_string()),
+        PageState::CommandHelp { .. } => ("Commands".to_string(), "families".to_string()),
+        PageState::Logs { .. } => ("Logs".to_string(), "session".to_string()),
+    }
+}
+
+fn compose_header_line(context: &str, detail: &str, max_chars: usize) -> String {
+    if max_chars == 0 {
+        return String::new();
+    }
+
+    let context = truncate_with_ellipsis(context, max_chars);
+    if detail.is_empty() || context.chars().count() + 1 >= max_chars {
+        return context;
+    }
+
+    let detail_chars = max_chars.saturating_sub(context.chars().count() + 1);
+    let detail = truncate_with_ellipsis(detail, detail_chars);
+    if detail.is_empty() {
+        return context;
+    }
+
+    format!("{context} {detail}")
+}
+
+fn truncate_with_ellipsis(value: &str, max_chars: usize) -> String {
+    let length = value.chars().count();
+    if length <= max_chars {
+        return value.to_string();
+    }
+
+    if max_chars == 0 {
+        return String::new();
+    }
+    if max_chars <= 3 {
+        return ".".repeat(max_chars);
+    }
+
+    let keep = max_chars - 3;
+    let prefix = value.chars().take(keep).collect::<String>();
+    format!("{prefix}...")
+}
+
 fn footer_help_preview_spans(ui: &UIStateGuard) -> Line<'static> {
     let key = ui.theme.page_desc().add_modifier(Modifier::BOLD);
     let label = ui.theme.playback_metadata();
@@ -322,14 +423,45 @@ fn footer_help_preview_spans(ui: &UIStateGuard) -> Line<'static> {
 }
 
 fn app_key_hint_spans(ui: &UIStateGuard) -> Line<'static> {
+    if let Some((family, children)) = popup::pending_shortcut_family_hint(ui) {
+        return pending_family_key_hint_spans(ui, &family, &children);
+    }
+
     let key = ui.theme.page_desc().add_modifier(Modifier::BOLD);
     let label = ui.theme.playback_metadata();
     Line::from(vec![
-        Span::styled("/", key),
-        Span::styled(" search ", label),
+        Span::styled("a", key),
+        Span::styled(" actions ", label),
+        Span::styled("g", key),
+        Span::styled(" go ", label),
+        Span::styled("m", key),
+        Span::styled(" mode ", label),
         Span::styled("?", key),
         Span::styled(" help", label),
     ])
+}
+
+fn pending_family_key_hint_spans(ui: &UIStateGuard, family: &str, children: &[String]) -> Line<'static> {
+    const MAX_CHILDREN: usize = 4;
+
+    let key = ui.theme.page_desc().add_modifier(Modifier::BOLD);
+    let label = ui.theme.playback_metadata();
+    let mut spans = vec![Span::styled(format!("{family}:"), key)];
+
+    for child in children.iter().take(MAX_CHILDREN) {
+        spans.push(Span::styled(" ", label));
+        spans.push(Span::styled(child.clone(), key));
+    }
+
+    let hidden = children.len().saturating_sub(MAX_CHILDREN);
+    if hidden > 0 {
+        spans.push(Span::styled(format!(" +{hidden}"), label));
+    }
+
+    spans.push(Span::styled(" ", label));
+    spans.push(Span::styled("esc", key));
+    spans.push(Span::styled(" cancel", label));
+    Line::from(spans)
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -361,5 +493,87 @@ impl Orientation {
             Self::Vertical => Layout::vertical(constraints),
             Self::Horizontal => Layout::horizontal(constraints),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{app_key_hint_spans, compose_header_line};
+    use crate::{
+        command::Command,
+        key::{Key, KeySequence},
+        state::{PopupState, ShortcutFamilyItem, UIState},
+    };
+    use crossterm::event::KeyCode;
+    use parking_lot::Mutex;
+    use ratatui::{text::Line, widgets::ListState};
+
+    #[test]
+    fn header_line_truncates_detail_before_context() {
+        let line = compose_header_line("Search", "playlist/a-very-very-long-name", 20);
+        assert!(line.starts_with("Search "));
+        assert_eq!(line.chars().count(), 20);
+        assert!(line.ends_with("..."));
+    }
+
+    #[test]
+    fn header_line_truncates_context_when_width_is_tight() {
+        let line = compose_header_line("Commands", "families", 6);
+        assert_eq!(line, "Com...");
+    }
+
+    #[test]
+    fn header_line_omits_separator_when_detail_is_empty() {
+        let line = compose_header_line("Library", "", 20);
+        assert_eq!(line, "Library");
+    }
+
+    #[test]
+    fn app_key_hint_defaults_to_family_first_idle_prompt() {
+        let ui = Mutex::new(UIState::default());
+        let ui = ui.lock();
+        let line = app_key_hint_spans(&ui);
+        assert_eq!(line_plain(&line), "a actions g go m mode ? help");
+    }
+
+    #[test]
+    fn app_key_hint_shows_pending_family_children_when_popup_is_open() {
+        let ui = Mutex::new(UIState::default());
+        let mut ui = ui.lock();
+        ui.popup = Some(PopupState::ShortcutFamily {
+            title: "go to".to_string(),
+            prefix: KeySequence {
+                keys: vec![Key::None(KeyCode::Char('g'))],
+            },
+            items: vec![
+                shortcut_item('c', "g c", Command::CurrentlyPlayingContextPage),
+                shortcut_item('t', "g t", Command::TopTrackPage),
+                shortcut_item('r', "g r", Command::RecentlyPlayedTrackPage),
+                shortcut_item('y', "g y", Command::LikedTrackPage),
+                shortcut_item('l', "g l", Command::LibraryPage),
+            ],
+            list_state: ListState::default(),
+        });
+
+        let line = app_key_hint_spans(&ui);
+        assert_eq!(line_plain(&line), "g: c t r y +1 esc cancel");
+    }
+
+    fn shortcut_item(key: char, key_sequence: &str, command: Command) -> ShortcutFamilyItem {
+        ShortcutFamilyItem {
+            trigger: KeySequence {
+                keys: vec![Key::None(KeyCode::Char(key))],
+            },
+            key_sequence: key_sequence.into(),
+            command,
+            has_children: false,
+        }
+    }
+
+    fn line_plain(line: &Line<'_>) -> String {
+        line.spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>()
     }
 }

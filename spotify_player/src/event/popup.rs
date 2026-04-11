@@ -530,11 +530,20 @@ fn handle_key_sequence_for_shortcut_family_popup(
     }
 
     let keymap_config = &config::get_config().keymap_config;
-    if keymap_config
-        .find_command_or_action_from_key_sequence(key_sequence)
-        .is_some()
-        || keymap_config.has_matched_prefix(key_sequence)
-    {
+    if let Some(command_or_action) = keymap_config.find_command_or_action_from_key_sequence(key_sequence) {
+        if matches!(
+            command_or_action,
+            CommandOrAction::Command(Command::PreviousPage | Command::ClosePopup)
+        ) {
+            ui.popup = None;
+            return Ok(true);
+        }
+
+        ui.popup = None;
+        return super::dispatch_key_sequence(key_sequence, client_pub, state, ui);
+    }
+
+    if keymap_config.has_matched_prefix(key_sequence) {
         ui.popup = None;
         return super::dispatch_key_sequence(key_sequence, client_pub, state, ui);
     }
@@ -1036,6 +1045,38 @@ mod tests {
 
         assert!(handled);
         assert!(ui.popup.is_none());
+    }
+
+    #[test]
+    fn shortcut_family_popup_escape_only_dismisses_popup() {
+        let state = test_state();
+        let (client_pub, _client_sub) = flume::unbounded();
+        let mut ui = state.ui.lock();
+        let current_page = ui.current_page().clone();
+        ui.history.push(current_page);
+        let history_len = ui.history.len();
+
+        assert!(open_shortcut_family_popup(
+            KeySequence {
+                keys: vec![Key::None(crossterm::event::KeyCode::Char('g'))],
+            },
+            &state,
+            &mut ui,
+        ));
+
+        let handled = handle_key_sequence_for_shortcut_family_popup(
+            &KeySequence {
+                keys: vec![Key::None(crossterm::event::KeyCode::Esc)],
+            },
+            &client_pub,
+            &state,
+            &mut ui,
+        )
+        .expect("escape should dismiss shortcut-family popup");
+
+        assert!(handled);
+        assert!(ui.popup.is_none());
+        assert_eq!(ui.history.len(), history_len);
     }
 
     #[test]

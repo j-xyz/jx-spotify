@@ -326,6 +326,32 @@ fn render_list_popup(
     chunks[0]
 }
 
+pub(super) fn pending_shortcut_family_hint(ui: &UIStateGuard) -> Option<(String, Vec<String>)> {
+    let PopupState::ShortcutFamily { prefix, items, .. } = ui.popup.as_ref()? else {
+        return None;
+    };
+
+    let family = prefix
+        .keys
+        .iter()
+        .map(|key| key.display_help())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if family.is_empty() {
+        return None;
+    }
+
+    let mut children = Vec::new();
+    for item in items {
+        let child = item.trigger.display_help();
+        if !children.contains(&child) {
+            children.push(child);
+        }
+    }
+
+    (!children.is_empty()).then_some((family, children))
+}
+
 /// Render a shortcut help popup to show the available shortcuts based on user's inputs
 pub fn render_shortcut_help_popup(
     frame: &mut Frame,
