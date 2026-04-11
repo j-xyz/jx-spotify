@@ -104,22 +104,15 @@ impl AppClient {
                 .context("get authorize URL for user-provided client")?;
             if let Err(err) = client.prompt_for_token(&url).await {
                 let err_text = err.to_string();
-                let should_retry_with_fresh_cache = token_cache_path_exists(
-                    configs
-                        .cache_folder
-                        .join("user_client_token.json")
-                        .as_path(),
-                ) && err_text.contains("status code 400");
+                let token_cache_path = configs.cache_folder.join("user_client_token.json");
+                let should_retry_with_fresh_cache =
+                    should_retry_user_client_auth_with_fresh_cache(&err_text, &token_cache_path);
 
                 if should_retry_with_fresh_cache {
-                    let token_cache_path = configs.cache_folder.join("user_client_token.json");
                     tracing::warn!(
                         "User client token refresh failed with 400, clearing cached token and retrying authentication"
                     );
-                    std::fs::remove_file(&token_cache_path).with_context(|| {
-                        format!("remove stale user client token cache at {token_cache_path:?}")
-                    })?;
-                    ensure_private_file(&token_cache_path)?;
+                    clear_stale_user_client_token_cache(&token_cache_path)?;
                     client.prompt_for_token(&url).await.context(
                         "re-authenticate user-provided client after clearing stale token cache",
                     )?;
@@ -234,7 +227,9 @@ impl AppClient {
 
         tracing::info!("Used a new session for Spotify client.");
 
-        self.refresh_token().await.context("refresh auth token")?;
+        self.refresh_user_client_token()
+            .await
+            .context("refresh auth token")?;
 
         if let Some(state) = state {
             // reset the application's caches
@@ -253,6 +248,36 @@ impl AppClient {
                 .await
                 .context("create new client session")?;
         }
+        Ok(())
+    }
+
+    async fn refresh_user_client_token(&self) -> Result<()> {
+        let Some(client) = self.user_client.as_ref() else {
+            return Ok(());
+        };
+
+        if let Err(err) = client.refresh_token().await {
+            let err_text = err.to_string();
+            let token_cache_path = config::get_config()
+                .cache_folder
+                .join("user_client_token.json");
+            if should_retry_user_client_auth_with_fresh_cache(&err_text, &token_cache_path) {
+                tracing::warn!(
+                    "User client token refresh failed with 400, clearing cached token and retrying authentication"
+                );
+                clear_stale_user_client_token_cache(&token_cache_path)?;
+                let mut reauth_client = client.clone();
+                let url = reauth_client
+                    .get_authorize_url(None)
+                    .context("get authorize URL for user-provided client")?;
+                reauth_client.prompt_for_token(&url).await.context(
+                    "re-authenticate user-provided client after clearing stale token cache",
+                )?;
+            } else {
+                return Err(err.into());
+            }
+        }
+
         Ok(())
     }
 
@@ -2072,6 +2097,20 @@ fn token_cache_path_exists(path: &std::path::Path) -> bool {
     path.exists()
 }
 
+fn should_retry_user_client_auth_with_fresh_cache(
+    err_text: &str,
+    token_cache_path: &std::path::Path,
+) -> bool {
+    token_cache_path_exists(token_cache_path) && err_text.contains("status code 400")
+}
+
+fn clear_stale_user_client_token_cache(token_cache_path: &std::path::Path) -> Result<()> {
+    std::fs::remove_file(token_cache_path)
+        .with_context(|| format!("remove stale user client token cache at {token_cache_path:?}"))?;
+    ensure_private_file(token_cache_path)?;
+    Ok(())
+}
+
 fn move_seed_track_to_front(tracks: &mut Vec<Track>, seed_track: Track) {
     tracks.retain(|track| track.id != seed_track.id);
     tracks.insert(0, seed_track);
@@ -2079,7 +2118,7 @@ fn move_seed_track_to_front(tracks: &mut Vec<Track>, seed_track: Track) {
 
 #[cfg(test)]
 mod tests {
-    use super::move_seed_track_to_front;
+    use super::{move_seed_track_to_front, should_retry_user_client_auth_with_fresh_cache};
     use crate::state::Track;
     use rspotify::model::TrackId;
 
@@ -2120,5 +2159,29 @@ mod tests {
         assert_eq!(tracks.len(), 2);
         assert_eq!(tracks[0].id, seed.id);
         assert_eq!(tracks[1].id, second.id);
+    }
+
+    #[test]
+    fn stale_user_client_cache_retry_requires_400_and_existing_cache() {
+        let path = std::env::temp_dir().join(format!(
+            "spotify-player-user-client-token-cache-test-{}",
+            std::process::id()
+        ));
+        std::fs::write(&path, b"x").unwrap();
+
+        assert!(should_retry_user_client_auth_with_fresh_cache(
+            "http error: status code 400 Bad Request",
+            &path
+        ));
+        assert!(!should_retry_user_client_auth_with_fresh_cache(
+            "http error: status code 401 Unauthorized",
+            &path
+        ));
+        assert!(!should_retry_user_client_auth_with_fresh_cache(
+            "http error: status code 400 Bad Request",
+            std::path::Path::new("/tmp/path-that-does-not-exist")
+        ));
+
+        std::fs::remove_file(path).unwrap();
     }
 }
