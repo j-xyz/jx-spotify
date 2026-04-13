@@ -8,6 +8,7 @@ const SHELL_WIDE_THRESHOLD: u16 = 120;
 const SHELL_MAX_WIDTH: u16 = 140;
 const SHELL_MIN_SIDE_PADDING: u16 = 2;
 const SHELL_TEXT_INSET: u16 = 2;
+const ROW_HIGHLIGHT_SYMBOL: &str = "| ";
 
 pub fn content_shell_rect(rect: Rect) -> Rect {
     if rect.width < SHELL_WIDE_THRESHOLD {
@@ -203,7 +204,7 @@ pub fn highlight_symbol(theme: &config::Theme, is_active: bool) -> Line<'static>
     } else {
         Style::default()
     };
-    Line::from(vec![Span::styled("│ ", symbol_style)])
+    Line::from(vec![Span::styled(ROW_HIGHLIGHT_SYMBOL, symbol_style)])
 }
 
 /// Convert a string to a bidirectional string.
@@ -346,5 +347,17 @@ mod tests {
         assert_eq!(normalized.bg, None);
         assert!(!normalized.add_modifier.contains(Modifier::REVERSED));
         assert!(normalized.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn highlight_symbol_uses_shared_rail_with_trailing_gap() {
+        let active = highlight_symbol(&config::Theme::default(), true);
+        let rendered = active
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+
+        assert_eq!(rendered, ROW_HIGHLIGHT_SYMBOL);
     }
 }

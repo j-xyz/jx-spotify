@@ -777,7 +777,7 @@ fn render_search_tui_results(
         ],
     )
     .column_spacing(1)
-    .highlight_symbol(search_tui_highlight_symbol(
+    .highlight_symbol(utils::highlight_symbol(
         &ui.theme,
         is_active && focus == SearchTuiFocus::Results,
     ))
@@ -793,15 +793,6 @@ fn render_search_tui_results(
         return;
     };
     utils::render_table_window(frame, table, rect, len, &mut page_state.result_list);
-}
-
-fn search_tui_highlight_symbol(theme: &config::Theme, is_active: bool) -> Line<'static> {
-    let symbol_style = if is_active {
-        theme.playback_status()
-    } else {
-        Style::default()
-    };
-    Line::from(vec![Span::styled(" |", symbol_style)])
 }
 
 #[derive(Debug)]
