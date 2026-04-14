@@ -77,6 +77,11 @@ pub fn panel_style(theme: &config::Theme) -> Style {
     theme.app()
 }
 
+pub fn render_panel_body(frame: &mut Frame, theme: &config::Theme, rect: Rect) -> Rect {
+    frame.render_widget(Block::default().style(panel_style(theme)), rect);
+    rect
+}
+
 pub fn render_panel<'a>(
     frame: &mut Frame,
     theme: &config::Theme,

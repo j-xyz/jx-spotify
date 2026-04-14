@@ -109,7 +109,8 @@ pub fn render_popup(
                 let rect = render_list_popup(
                     frame,
                     rect,
-                    &title,
+                    "shortcuts",
+                    Some(Line::from(title)),
                     display_items,
                     items.len() as u16 + 2,
                     ui,
@@ -117,15 +118,19 @@ pub fn render_popup(
                 (rect, false)
             }
             PopupState::ActionList(item, _) => {
+                let item_name = item.name().to_string();
+                let display_items = item
+                    .actions_desc()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(id, d)| (format!("[{id}] {d}"), false))
+                    .collect();
                 let rect = render_list_popup(
                     frame,
                     rect,
-                    &format!("Actions on {}", item.name()),
-                    item.actions_desc()
-                        .into_iter()
-                        .enumerate()
-                        .map(|(id, d)| (format!("[{id}] {d}"), false))
-                        .collect(),
+                    "actions",
+                    Some(Line::from(item_name)),
+                    display_items,
                     item.n_actions() as u16 + 2, // 2 for top/bot paddings
                     ui,
                 );
@@ -144,13 +149,13 @@ pub fn render_popup(
                     .map(|d| (format!("{} | {}", d.name, d.id), current_device_id == d.id))
                     .collect();
 
-                let rect = render_list_popup(frame, rect, "Devices", items, 5, ui);
+                let rect = render_list_popup(frame, rect, "Devices", None, items, 5, ui);
                 (rect, false)
             }
             PopupState::ThemeList(themes, ..) => {
                 let items = themes.iter().map(|t| (t.name.clone(), false)).collect();
 
-                let rect = render_list_popup(frame, rect, "Themes", items, 7, ui);
+                let rect = render_list_popup(frame, rect, "Themes", None, items, 7, ui);
                 (rect, false)
             }
             PopupState::UserPlaylistList(action, _) => {
@@ -203,8 +208,15 @@ pub fn render_popup(
                 );
                 frame.render_widget(Paragraph::new(search_query.clone()), search_rect);
 
-                let rect =
-                    render_list_popup(frame, chunks[2], "User Playlists", display_items, 10, ui);
+                let rect = render_list_popup(
+                    frame,
+                    chunks[2],
+                    "playlists",
+                    Some(Line::from("user")),
+                    display_items,
+                    10,
+                    ui,
+                );
                 (rect, false)
             }
             PopupState::UserFollowedArtistList { .. } => {
@@ -217,7 +229,15 @@ pub fn render_popup(
                     .map(|a| (a.to_string(), false))
                     .collect();
 
-                let rect = render_list_popup(frame, rect, "User Followed Artists", items, 7, ui);
+                let rect = render_list_popup(
+                    frame,
+                    rect,
+                    "artists",
+                    Some(Line::from("user")),
+                    items,
+                    7,
+                    ui,
+                );
                 (rect, false)
             }
             PopupState::UserSavedAlbumList { .. } => {
@@ -230,13 +250,21 @@ pub fn render_popup(
                     .map(|a| (a.to_string(), false))
                     .collect();
 
-                let rect = render_list_popup(frame, rect, "User Saved Albums", items, 7, ui);
+                let rect = render_list_popup(
+                    frame,
+                    rect,
+                    "albums",
+                    Some(Line::from("user")),
+                    items,
+                    7,
+                    ui,
+                );
                 (rect, false)
             }
             PopupState::ArtistList(_, artists, ..) => {
                 let items = artists.iter().map(|a| (a.to_string(), false)).collect();
 
-                let rect = render_list_popup(frame, rect, "Artists", items, 5, ui);
+                let rect = render_list_popup(frame, rect, "Artists", None, items, 5, ui);
                 (rect, false)
             }
         },
@@ -302,17 +330,18 @@ fn render_contextual_help_popup(
 }
 
 /// A helper function to render a list popup
-fn render_list_popup(
+fn render_list_popup<'a>(
     frame: &mut Frame,
     rect: Rect,
     title: &str,
+    meta: Option<Line<'a>>,
     items: Vec<(String, bool)>,
     length: u16,
     ui: &mut UIStateGuard,
 ) -> Rect {
     let chunks = Layout::vertical([Constraint::Fill(0), Constraint::Length(length)]).split(rect);
 
-    let rect = utils::render_panel(frame, &ui.theme, chunks[1], title, None, true);
+    let rect = utils::render_panel(frame, &ui.theme, chunks[1], title, meta, true);
     let (list, len) = utils::construct_list_widget(&ui.theme, items, true);
 
     utils::render_list_window(

@@ -847,24 +847,17 @@ pub fn render_context_page(
     // 1. Get data
     let PageState::Context {
         id,
-        context_page_type,
+        context_page_type: _,
         ..
     } = ui.current_page()
     else {
         return;
     };
 
-    let data = state.data.read();
-    let (panel_title, panel_meta) = match id
-        .as_ref()
-        .and_then(|id| data.caches.context.get(&id.uri()))
-    {
-        Some(context) => context_panel_title_meta(context),
-        None => (context_page_type.title(), None),
-    };
-
     // 2. Construct the page's layout
-    let rect = utils::render_panel(frame, &ui.theme, rect, &panel_title, panel_meta, true);
+    let rect = utils::render_panel_body(frame, &ui.theme, rect);
+
+    let data = state.data.read();
 
     // 3+4. Construct and render the page's widgets
     let Some(id) = id else {
@@ -893,19 +886,10 @@ pub fn render_context_page(
                     (top_tracks, albums, related_artists),
                 );
             }
-            Context::Playlist { tracks, playlist } => {
-                let rect = if playlist.desc.is_empty() {
-                    rect
-                } else {
-                    let chunks =
-                        Layout::vertical([Constraint::Length(1), Constraint::Fill(0)]).split(rect);
-                    frame.render_widget(
-                        Paragraph::new(playlist.desc.clone()).style(ui.theme.playlist_desc()),
-                        chunks[0],
-                    );
-                    chunks[1]
-                };
-
+            Context::Playlist {
+                tracks,
+                playlist: _,
+            } => {
                 render_track_table(
                     frame,
                     rect,
@@ -942,66 +926,6 @@ pub fn render_context_page(
             frame.render_widget(Paragraph::new("Loading..."), rect);
         }
     }
-}
-
-fn context_panel_title_meta(context: &Context) -> (String, Option<Line<'static>>) {
-    match context {
-        Context::Playlist { playlist, tracks } => (
-            "tracks".to_string(),
-            Some(Line::from(format!(
-                "{}  {} songs  {}",
-                playlist.owner.0,
-                tracks.len(),
-                context_play_time(tracks),
-            ))),
-        ),
-        Context::Album { album, tracks } => (
-            "tracks".to_string(),
-            Some(Line::from(format!(
-                "{}  {} songs  {}",
-                album.release_date,
-                tracks.len(),
-                context_play_time(tracks),
-            ))),
-        ),
-        Context::Artist {
-            top_tracks,
-            albums,
-            related_artists,
-            ..
-        } => (
-            "artist".to_string(),
-            Some(Line::from(format!(
-                "{} top tracks  {} albums  {} related artists",
-                top_tracks.len(),
-                albums.len(),
-                related_artists.len(),
-            ))),
-        ),
-        Context::Tracks { desc, tracks } => (
-            desc.clone(),
-            Some(Line::from(format!(
-                "{} songs  {}",
-                tracks.len(),
-                context_play_time(tracks),
-            ))),
-        ),
-        Context::Show {
-            show: _show,
-            episodes,
-        } => (
-            "episodes".to_string(),
-            Some(Line::from(format!("{} episodes", episodes.len()))),
-        ),
-    }
-}
-
-fn context_play_time(tracks: &[Track]) -> String {
-    let duration = tracks
-        .iter()
-        .map(|track| track.duration)
-        .sum::<std::time::Duration>();
-    format_duration_hms(&chrono::Duration::from_std(duration).unwrap_or_default())
 }
 
 pub fn render_library_page(
@@ -1166,7 +1090,7 @@ pub fn render_browse_page(
                     frame,
                     &ui.theme,
                     rect,
-                    "categories",
+                    browse_panel_title(ui_state),
                     Some(Line::from(format!("{count} items"))),
                     is_active,
                 );
@@ -1179,7 +1103,7 @@ pub fn render_browse_page(
                         frame,
                         &ui.theme,
                         rect,
-                        &format!("{} playlists", category.name),
+                        browse_panel_title(ui_state),
                         None,
                         is_active,
                     );
@@ -1192,12 +1116,11 @@ pub fn render_browse_page(
                     .map(|c| (c.name.clone(), false))
                     .collect::<Vec<_>>();
                 let count = items.len();
-                let title = format!("{} playlists", category.name);
                 rect = utils::render_panel(
                     frame,
                     &ui.theme,
                     rect,
-                    &title,
+                    browse_panel_title(ui_state),
                     Some(Line::from(format!("{count} items"))),
                     is_active,
                 );
@@ -1214,6 +1137,13 @@ pub fn render_browse_page(
         return;
     };
     utils::render_list_window(frame, list, rect, len, list_state);
+}
+
+fn browse_panel_title(state: &BrowsePageUIState) -> &'static str {
+    match state {
+        BrowsePageUIState::CategoryList { .. } => "categories",
+        BrowsePageUIState::CategoryPlaylistList { .. } => "playlists",
+    }
 }
 
 pub fn render_lyrics_page(
@@ -1359,7 +1289,7 @@ pub fn render_commands_help_page(
         frame,
         &ui.theme,
         rect,
-        "help",
+        "commands",
         Some(Line::from(format!("{} items", filtered_len))),
         true,
     );
@@ -1722,10 +1652,12 @@ fn format_shortcuts(shortcuts: &[&str]) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        search_tui_query_input_rect, search_tui_text_rect, split_row_right_layout, Rect,
-        SplitRowRightLayout, SplitRowRightMeta, SEARCH_TUI_QUERY_SHELF_HEIGHT,
+        browse_panel_title, search_tui_query_input_rect, search_tui_text_rect,
+        split_row_right_layout, Rect, SplitRowRightLayout, SplitRowRightMeta,
+        SEARCH_TUI_QUERY_SHELF_HEIGHT,
     };
-    use crate::ui::utils;
+    use crate::{state::BrowsePageUIState, ui::utils};
+    use ratatui::widgets::ListState;
 
     #[test]
     fn right_meta_layout_expands_when_row_has_room() {
@@ -1800,6 +1732,19 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn browse_category_playlist_panel_title_stays_role_level() {
+        let title = browse_panel_title(&BrowsePageUIState::CategoryPlaylistList {
+            category: crate::state::Category {
+                id: "focus".to_string(),
+                name: "Focus".to_string(),
+            },
+            state: ListState::default(),
+        });
+
+        assert_eq!(title, "playlists");
+    }
 }
 
 pub fn render_queue_page(
@@ -1866,7 +1811,7 @@ pub fn render_queue_page(
         frame,
         &ui.theme,
         rect,
-        "queue",
+        "items",
         Some(Line::from(format!("{queue_len} items"))),
         true,
     );
@@ -2006,14 +1951,6 @@ fn render_artist_context_page_windows(
             Constraint::Length(6),
             Constraint::Fill(1),
         ],
-    )
-    .header(
-        Row::new(vec![
-            Cell::from("Date"),
-            Cell::from("Type"),
-            Cell::from("Name"),
-        ])
-        .style(ui.theme.table_header()),
     )
     .column_spacing(2)
     .highlight_symbol(utils::highlight_symbol(&ui.theme, is_albums_active))
@@ -2234,15 +2171,6 @@ fn render_episode_table(
             Constraint::Fill(1),
         ],
     )
-    .header(
-        Row::new(vec![
-            Cell::from("#"),
-            Cell::from("Title"),
-            Cell::from("Date"),
-            Cell::from("Duration"),
-        ])
-        .style(ui.theme.table_header()),
-    )
     .column_spacing(2)
     .highlight_symbol(utils::highlight_symbol(&ui.theme, is_active))
     .row_highlight_style(utils::gutter_selection_style(&ui.theme, is_active));
@@ -2264,7 +2192,7 @@ pub fn render_logs_page(frame: &mut Frame, state: &SharedState, ui: &mut UIState
         frame,
         &ui.theme,
         rect,
-        "logs",
+        "entries",
         Some(Line::from("most recent first visible by scroll")),
         true,
     );

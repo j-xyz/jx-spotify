@@ -73,7 +73,6 @@ struct ComponentStyle {
     current_playing: Option<Style>,
     page_desc: Option<Style>,
     playlist_desc: Option<Style>,
-    table_header: Option<Style>,
     selection: Option<Style>,
     secondary_row: Option<Style>,
     like: Option<Style>,
@@ -331,14 +330,6 @@ impl Theme {
                     .fg(StyleColor::BrightBlack)
                     .modifiers([StyleModifier::Dim]),
             )
-            .style(&self.palette)
-    }
-
-    pub fn table_header(&self) -> style::Style {
-        self.component_style
-            .table_header
-            .as_ref()
-            .unwrap_or(&Style::default().fg(StyleColor::Blue))
             .style(&self.palette)
     }
 
@@ -700,7 +691,6 @@ impl ComponentStyle {
                     .fg(StyleColor::BrightBlack)
                     .modifiers([StyleModifier::Dim]),
             ),
-            table_header: Some(Style::default().fg(StyleColor::Cyan)),
             selection: Some(
                 Style::default()
                     .bg(StyleColor::BrightBlack)

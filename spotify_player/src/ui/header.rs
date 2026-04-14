@@ -4,7 +4,7 @@ use crate::{
         BrowsePageUIState, Context, ContextId, ContextPageType, Id, PageState, SearchTuiMode,
         SharedState, UIStateGuard,
     },
-    utils::map_join,
+    utils::{format_duration_hms, map_join},
 };
 use ratatui::text::{Line, Span};
 
@@ -87,6 +87,27 @@ pub(crate) fn app_header_meta_line(
 
             Some(Line::from(spans))
         }
+        PageState::Context {
+            id,
+            context_page_type,
+            ..
+        } => {
+            let data = state.data.read();
+            let context_uri = id
+                .as_ref()
+                .map(|id| id.uri())
+                .or_else(|| match context_page_type {
+                    ContextPageType::CurrentPlaying => {
+                        state.player.read().playing_context_id().map(|id| id.uri())
+                    }
+                    ContextPageType::Browsing(id) => Some(id.uri()),
+                });
+
+            context_uri
+                .as_ref()
+                .and_then(|uri| data.caches.context.get(uri))
+                .map(context_meta_line)
+        }
         _ => None,
     }
 }
@@ -98,7 +119,7 @@ pub(crate) fn page_breadcrumb_segments(
     let data = state.data.read();
 
     match ui.current_page() {
-        PageState::Library { .. } => vec![BreadcrumbSegment::plain("playlists")],
+        PageState::Library { .. } => vec![BreadcrumbSegment::plain("library")],
         PageState::Search { current_query, .. } => {
             if current_query.is_empty() {
                 vec![BreadcrumbSegment::plain("results")]
@@ -258,6 +279,48 @@ fn context_id_fallback_segments(id: &ContextId) -> Vec<BreadcrumbSegment> {
     }
 }
 
+fn context_meta_line(context: &Context) -> Line<'static> {
+    match context {
+        Context::Playlist { playlist, tracks } => Line::from(format!(
+            "{}  {} songs  {}",
+            playlist.owner.0,
+            tracks.len(),
+            context_play_time(tracks),
+        )),
+        Context::Album { album, tracks } => Line::from(format!(
+            "{}  {} songs  {}",
+            album.release_date,
+            tracks.len(),
+            context_play_time(tracks),
+        )),
+        Context::Artist {
+            top_tracks,
+            albums,
+            related_artists,
+            ..
+        } => Line::from(format!(
+            "{} top tracks  {} albums  {} related artists",
+            top_tracks.len(),
+            albums.len(),
+            related_artists.len(),
+        )),
+        Context::Tracks { tracks, .. } => Line::from(format!(
+            "{} songs  {}",
+            tracks.len(),
+            context_play_time(tracks)
+        )),
+        Context::Show { episodes, .. } => Line::from(format!("{} episodes", episodes.len())),
+    }
+}
+
+fn context_play_time(tracks: &[crate::state::Track]) -> String {
+    let duration = tracks
+        .iter()
+        .map(|track| track.duration)
+        .sum::<std::time::Duration>();
+    format_duration_hms(&chrono::Duration::from_std(duration).unwrap_or_default())
+}
+
 fn push_unique(segments: &mut Vec<BreadcrumbSegment>, segment: BreadcrumbSegment) {
     if segments.last() != Some(&segment) {
         segments.push(segment);
@@ -294,7 +357,10 @@ fn truncate_with_ellipsis(value: &str, max_chars: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_segments, BreadcrumbSegment};
+    use super::{context_meta_line, format_segments, BreadcrumbSegment};
+    use crate::state::{Artist, Context, Playlist, Show, Track};
+    use ratatui::text::Line;
+    use std::time::Duration as StdDuration;
 
     #[test]
     fn breadcrumb_segments_render_sigils_and_lineage() {
@@ -327,5 +393,54 @@ mod tests {
     fn breadcrumb_uses_plain_label_when_no_sigil_exists() {
         let line = format_segments(&[BreadcrumbSegment::plain("Playlists")], 20);
         assert_eq!(line, "playlists");
+    }
+
+    #[test]
+    fn playlist_context_meta_promotes_count_to_app_chrome() {
+        let meta = context_meta_line(&Context::Playlist {
+            playlist: Playlist {
+                collaborative: false,
+                id: rspotify::model::PlaylistId::from_id("37i9dQZF1DWWEJlAGA9gs0").unwrap(),
+                name: "Bossa Nova Covers".to_string(),
+                owner: (
+                    "Spotify".to_string(),
+                    rspotify::model::UserId::from_id("spotify").unwrap(),
+                ),
+                desc: String::new(),
+                current_folder_id: 0,
+                snapshot_id: String::new(),
+            },
+            tracks: vec![track_with_duration(180), track_with_duration(240)],
+        });
+
+        assert_eq!(meta, Line::from("Spotify  2 songs  7m 0s"));
+    }
+
+    #[test]
+    fn show_context_meta_promotes_episode_count_to_app_chrome() {
+        let meta = context_meta_line(&Context::Show {
+            show: Show {
+                id: rspotify::model::ShowId::from_id("38bS44xjbVVZ3No3ByF1dJ").unwrap(),
+                name: "Example Show".to_string(),
+            },
+            episodes: Vec::new(),
+        });
+
+        assert_eq!(meta, Line::from("0 episodes"));
+    }
+
+    fn track_with_duration(seconds: i64) -> Track {
+        Track {
+            artists: vec![Artist {
+                id: rspotify::model::ArtistId::from_id("3WrFJ7ztbogyGnTHbHJFl2").unwrap(),
+                name: "Artist".to_string(),
+            }],
+            album: None,
+            duration: StdDuration::from_secs(seconds as u64),
+            explicit: false,
+            id: rspotify::model::TrackId::from_id("4uLU6hMCjMI75M1A2tKUQC").unwrap(),
+            name: "Track".to_string(),
+            added_at: 0,
+        }
     }
 }
