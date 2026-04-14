@@ -22,6 +22,7 @@ use crate::state::ImageRenderInfo;
 
 type Terminal = ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>;
 
+mod header;
 pub(crate) mod page;
 mod playback;
 mod popup;
@@ -255,7 +256,7 @@ fn render_app_chrome(
     frame.render_widget(Paragraph::new(""), top_rows[1]);
     let header_text_rect = utils::shell_text_rect(top_rows[1]);
     let badge_rect = utils::app_badge_rect(top_rows[1], badge_width);
-    let detail_x = badge_rect.x.saturating_add(badge_rect.width);
+    let detail_x = badge_rect.x.saturating_add(badge_rect.width).saturating_add(2);
     let detail_width = header_text_rect
         .x
         .saturating_add(header_text_rect.width)
@@ -270,7 +271,7 @@ fn render_app_chrome(
         Paragraph::new(Span::styled(badge, ui.theme.app_title_badge())),
         badge_rect,
     );
-    let header_line = app_header_line(ui, detail_rect.width as usize);
+    let header_line = header::app_header_line(state, ui, detail_rect.width as usize);
     frame.render_widget(
         Paragraph::new(Span::styled(header_line, ui.theme.playback_metadata())),
         detail_rect,
@@ -313,89 +314,6 @@ fn render_app_chrome(
             bottom_chunks[1],
         );
     }
-}
-
-fn app_header_line(ui: &UIStateGuard, max_chars: usize) -> String {
-    let (context, detail) = app_header_context_detail(ui);
-    compose_header_line(&context, &detail, max_chars)
-}
-
-fn app_header_context_detail(ui: &UIStateGuard) -> (String, String) {
-    match ui.current_page() {
-        PageState::Library { .. } => ("Library".to_string(), "playlists".to_string()),
-        PageState::Search { current_query, .. } => {
-            let detail = if current_query.is_empty() {
-                "results".to_string()
-            } else {
-                format!("results/{current_query}")
-            };
-            ("Search".to_string(), detail)
-        }
-        PageState::SearchTui {
-            state, line_input, ..
-        } => {
-            let mode = match &state.mode {
-                SearchTuiMode::Global => "global".to_string(),
-                SearchTuiMode::Playlist { title, .. } => format!("playlist/{title}"),
-                SearchTuiMode::Album { title, .. } => format!("album/{title}"),
-                SearchTuiMode::Artist { title, .. } => format!("artist/{title}"),
-            };
-            let query = line_input.get_text();
-            let detail = if query.is_empty() {
-                mode
-            } else {
-                format!("{mode}/{query}")
-            };
-            ("Search".to_string(), detail)
-        }
-        PageState::Context {
-            context_page_type, ..
-        } => ("Context".to_string(), context_page_type.title()),
-        PageState::Browse { .. } => ("Browse".to_string(), "catalog".to_string()),
-        PageState::Lyrics { track, artists, .. } => {
-            ("Lyrics".to_string(), format!("{track}/{artists}"))
-        }
-        PageState::Queue { .. } => ("Queue".to_string(), "up next".to_string()),
-        PageState::CommandHelp { .. } => ("Commands".to_string(), "families".to_string()),
-        PageState::Logs { .. } => ("Logs".to_string(), "session".to_string()),
-    }
-}
-
-fn compose_header_line(context: &str, detail: &str, max_chars: usize) -> String {
-    if max_chars == 0 {
-        return String::new();
-    }
-
-    let context = truncate_with_ellipsis(context, max_chars);
-    if detail.is_empty() || context.chars().count() + 1 >= max_chars {
-        return context;
-    }
-
-    let detail_chars = max_chars.saturating_sub(context.chars().count() + 1);
-    let detail = truncate_with_ellipsis(detail, detail_chars);
-    if detail.is_empty() {
-        return context;
-    }
-
-    format!("{context} {detail}")
-}
-
-fn truncate_with_ellipsis(value: &str, max_chars: usize) -> String {
-    let length = value.chars().count();
-    if length <= max_chars {
-        return value.to_string();
-    }
-
-    if max_chars == 0 {
-        return String::new();
-    }
-    if max_chars <= 3 {
-        return ".".repeat(max_chars);
-    }
-
-    let keep = max_chars - 3;
-    let prefix = value.chars().take(keep).collect::<String>();
-    format!("{prefix}...")
 }
 
 fn footer_help_preview_spans(ui: &UIStateGuard) -> Line<'static> {
@@ -444,7 +362,11 @@ fn app_key_hint_spans(ui: &UIStateGuard) -> Line<'static> {
     ])
 }
 
-fn pending_family_key_hint_spans(ui: &UIStateGuard, family: &str, children: &[String]) -> Line<'static> {
+fn pending_family_key_hint_spans(
+    ui: &UIStateGuard,
+    family: &str,
+    children: &[String],
+) -> Line<'static> {
     const MAX_CHILDREN: usize = 4;
 
     let key = ui.theme.page_desc().add_modifier(Modifier::BOLD);
@@ -501,7 +423,7 @@ impl Orientation {
 
 #[cfg(test)]
 mod tests {
-    use super::{app_key_hint_spans, compose_header_line};
+    use super::app_key_hint_spans;
     use crate::{
         command::Command,
         key::{Key, KeySequence},
@@ -510,26 +432,6 @@ mod tests {
     use crossterm::event::KeyCode;
     use parking_lot::Mutex;
     use ratatui::{text::Line, widgets::ListState};
-
-    #[test]
-    fn header_line_truncates_detail_before_context() {
-        let line = compose_header_line("Search", "playlist/a-very-very-long-name", 20);
-        assert!(line.starts_with("Search "));
-        assert_eq!(line.chars().count(), 20);
-        assert!(line.ends_with("..."));
-    }
-
-    #[test]
-    fn header_line_truncates_context_when_width_is_tight() {
-        let line = compose_header_line("Commands", "families", 6);
-        assert_eq!(line, "Com...");
-    }
-
-    #[test]
-    fn header_line_omits_separator_when_detail_is_empty() {
-        let line = compose_header_line("Library", "", 20);
-        assert_eq!(line, "Library");
-    }
 
     #[test]
     fn app_key_hint_defaults_to_family_first_idle_prompt() {

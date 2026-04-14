@@ -353,9 +353,8 @@ mod tests {
         for (width, height, expected_text_x) in cases {
             let footer_shell = content_shell_rect(Rect::new(0, 0, width, height));
             let footer_text_rect = shell_text_rect(footer_shell);
-            let bounded_footer_text_rect = shell_text_rect(bounded_shell_rect(Rect::new(
-                0, 0, width, height,
-            )));
+            let bounded_footer_text_rect =
+                shell_text_rect(bounded_shell_rect(Rect::new(0, 0, width, height)));
 
             assert_eq!(
                 footer_text_rect.x, expected_text_x,

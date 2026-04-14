@@ -329,6 +329,19 @@ impl SearchTuiPageUIState {
             last_edited_at: Instant::now(),
         }
     }
+
+    pub fn for_mode(mode: SearchTuiMode) -> Self {
+        Self {
+            mode,
+            ..Self::new()
+        }
+    }
+}
+
+impl SearchTuiMode {
+    pub fn is_global(&self) -> bool {
+        matches!(self, Self::Global)
+    }
 }
 
 impl ContextPageType {

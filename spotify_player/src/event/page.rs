@@ -281,14 +281,25 @@ fn handle_search_tui_input(key: Key, ui: &mut UIStateGuard) -> Option<bool> {
 }
 
 fn handle_search_tui_escape(ui: &mut UIStateGuard) -> Result<bool> {
+    let is_global = {
+        match ui.current_page() {
+            PageState::SearchTui { state, .. } => state.mode.is_global(),
+            _ => anyhow::bail!("expect a search tui page"),
+        }
+    };
+    let should_pop = !is_global && ui.history.len() > 1;
+
+    if should_pop {
+        ui.history.pop();
+        ui.popup = None;
+        return Ok(true);
+    }
+
     let PageState::SearchTui { line_input, state } = ui.current_page_mut() else {
         anyhow::bail!("expect a search tui page");
     };
 
-    if matches!(
-        state.mode,
-        SearchTuiMode::Playlist { .. } | SearchTuiMode::Album { .. } | SearchTuiMode::Artist { .. }
-    ) {
+    if !is_global {
         reset_search_tui_to_global(line_input, state);
     } else if !line_input.is_empty() {
         *line_input = LineInput::default();
@@ -303,6 +314,13 @@ fn handle_search_tui_escape(ui: &mut UIStateGuard) -> Result<bool> {
     }
 
     Ok(true)
+}
+
+fn open_drilled_search_tui_page(ui: &mut UIStateGuard, mode: SearchTuiMode) {
+    ui.new_page(PageState::SearchTui {
+        line_input: LineInput::default(),
+        state: SearchTuiPageUIState::for_mode(mode),
+    });
 }
 
 fn reset_search_tui_to_global(line_input: &mut LineInput, state: &mut SearchTuiPageUIState) {
@@ -603,19 +621,13 @@ fn play_or_open_search_tui_item(
             client_pub.send(ClientRequest::GetContext(ContextId::Artist(
                 artist.id.clone_static(),
             )))?;
-
-            let PageState::SearchTui { line_input, state } = ui.current_page_mut() else {
-                anyhow::bail!("expect a search tui page");
-            };
-            *line_input = LineInput::default();
-            state.mode = SearchTuiMode::Artist {
-                artist_id: artist.id.clone_static(),
-                title: artist.name,
-            };
-            state.focus = SearchTuiFocus::Results;
-            state.result_list = Default::default();
-            state.last_dispatched_query = None;
-            state.last_edited_at = Instant::now();
+            open_drilled_search_tui_page(
+                ui,
+                SearchTuiMode::Artist {
+                    artist_id: artist.id.clone_static(),
+                    title: artist.name,
+                },
+            );
         }
         search_tui::SearchTuiItem::Album { album, .. } if force_play_context => {
             state.player.write().currently_playing_tracks_id = None;
@@ -628,19 +640,13 @@ fn play_or_open_search_tui_item(
             client_pub.send(ClientRequest::GetContext(ContextId::Album(
                 album.id.clone_static(),
             )))?;
-
-            let PageState::SearchTui { line_input, state } = ui.current_page_mut() else {
-                anyhow::bail!("expect a search tui page");
-            };
-            *line_input = LineInput::default();
-            state.mode = SearchTuiMode::Album {
-                album_id: album.id.clone_static(),
-                title: album.name,
-            };
-            state.focus = SearchTuiFocus::Results;
-            state.result_list = Default::default();
-            state.last_dispatched_query = None;
-            state.last_edited_at = Instant::now();
+            open_drilled_search_tui_page(
+                ui,
+                SearchTuiMode::Album {
+                    album_id: album.id.clone_static(),
+                    title: album.name,
+                },
+            );
         }
         search_tui::SearchTuiItem::Playlist { playlist, .. } if force_play_context => {
             state.player.write().currently_playing_tracks_id = None;
@@ -653,19 +659,13 @@ fn play_or_open_search_tui_item(
             client_pub.send(ClientRequest::GetContext(ContextId::Playlist(
                 playlist.id.clone_static(),
             )))?;
-
-            let PageState::SearchTui { line_input, state } = ui.current_page_mut() else {
-                anyhow::bail!("expect a search tui page");
-            };
-            *line_input = LineInput::default();
-            state.mode = SearchTuiMode::Playlist {
-                playlist_id: playlist.id.clone_static(),
-                title: playlist.name,
-            };
-            state.focus = SearchTuiFocus::Results;
-            state.result_list = Default::default();
-            state.last_dispatched_query = None;
-            state.last_edited_at = Instant::now();
+            open_drilled_search_tui_page(
+                ui,
+                SearchTuiMode::Playlist {
+                    playlist_id: playlist.id.clone_static(),
+                    title: playlist.name,
+                },
+            );
         }
     }
 

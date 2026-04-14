@@ -530,7 +530,9 @@ fn handle_key_sequence_for_shortcut_family_popup(
     }
 
     let keymap_config = &config::get_config().keymap_config;
-    if let Some(command_or_action) = keymap_config.find_command_or_action_from_key_sequence(key_sequence) {
+    if let Some(command_or_action) =
+        keymap_config.find_command_or_action_from_key_sequence(key_sequence)
+    {
         if matches!(
             command_or_action,
             CommandOrAction::Command(Command::PreviousPage | Command::ClosePopup)

@@ -14,9 +14,9 @@ use crate::{
 };
 
 use super::{
-    config, utils, Album, Alignment, Artist, ArtistFocusState, BrowsePageUIState, Cell, Constraint,
-    Context, ContextPageUIState, DataReadGuard, Frame, Id, Layout, LibraryFocusState, Modifier,
-    MutableWindowState, Orientation, PageState, Paragraph, PlaylistFolderItem, Rect, Row,
+    config, header, utils, Album, Alignment, Artist, ArtistFocusState, BrowsePageUIState, Cell,
+    Constraint, Context, ContextPageUIState, DataReadGuard, Frame, Id, Layout, LibraryFocusState,
+    Modifier, MutableWindowState, Orientation, PageState, Paragraph, PlaylistFolderItem, Rect, Row,
     SearchFocusState, SharedState, Span, Style, Table, Text, Track, UIStateGuard,
 };
 use crate::state::BidiDisplay;
@@ -527,17 +527,14 @@ pub fn render_search_tui_page(
     };
 
     let query = line_input.get_text();
-    let (title, source, items): (
-        String,
-        search_tui::SearchTuiResultsSource,
-        Vec<SearchTuiDisplayRow>,
-    ) = {
+    let breadcrumb = header::page_breadcrumb_segments(state, ui);
+    let title = search_tui_header_title(&mode, &breadcrumb).to_string();
+    let (source, items): (search_tui::SearchTuiResultsSource, Vec<SearchTuiDisplayRow>) = {
         let data = state.data.read();
         match &mode {
             SearchTuiMode::Global => {
                 let results = search_tui::build_items(&data, &mode, &query);
                 (
-                    "Search Results".to_string(),
                     results.source,
                     results
                         .items
@@ -546,10 +543,9 @@ pub fn render_search_tui_page(
                         .collect(),
                 )
             }
-            SearchTuiMode::Playlist { title, .. }
-            | SearchTuiMode::Album { title, .. }
-            | SearchTuiMode::Artist { title, .. } => (
-                title.clone(),
+            SearchTuiMode::Playlist { title: _title, .. }
+            | SearchTuiMode::Album { title: _title, .. }
+            | SearchTuiMode::Artist { title: _title, .. } => (
                 search_tui::SearchTuiResultsSource::Standard,
                 search_tui::build_context_tracks(&data, &mode, &query)
                     .into_iter()
@@ -654,6 +650,19 @@ fn search_tui_results_meta_line(
     }
 
     Line::from(spans)
+}
+
+fn search_tui_header_title(
+    mode: &SearchTuiMode,
+    breadcrumb: &[header::BreadcrumbSegment],
+) -> &'static str {
+    if matches!(mode, SearchTuiMode::Global)
+        && matches!(breadcrumb, [segment] if segment == &header::BreadcrumbSegment::plain("search-tui"))
+    {
+        "results"
+    } else {
+        "tracks"
+    }
 }
 
 fn search_tui_text_rect(rect: Rect) -> Rect {
@@ -1007,7 +1016,7 @@ pub fn render_context_page(
 fn context_panel_title_meta(context: &Context) -> (String, Option<Line<'static>>) {
     match context {
         Context::Playlist { playlist, tracks } => (
-            playlist.name.clone(),
+            "tracks".to_string(),
             Some(Line::from(format!(
                 "{}  {} songs  {}",
                 playlist.owner.0,
@@ -1016,7 +1025,7 @@ fn context_panel_title_meta(context: &Context) -> (String, Option<Line<'static>>
             ))),
         ),
         Context::Album { album, tracks } => (
-            album.name.clone(),
+            "tracks".to_string(),
             Some(Line::from(format!(
                 "{}  {} songs  {}",
                 album.release_date,
@@ -1024,7 +1033,20 @@ fn context_panel_title_meta(context: &Context) -> (String, Option<Line<'static>>
                 context_play_time(tracks),
             ))),
         ),
-        Context::Artist { artist, .. } => (artist.name.clone(), None),
+        Context::Artist {
+            top_tracks,
+            albums,
+            related_artists,
+            ..
+        } => (
+            "artist".to_string(),
+            Some(Line::from(format!(
+                "{} top tracks  {} albums  {} related artists",
+                top_tracks.len(),
+                albums.len(),
+                related_artists.len(),
+            ))),
+        ),
         Context::Tracks { desc, tracks } => (
             desc.clone(),
             Some(Line::from(format!(
@@ -1033,8 +1055,11 @@ fn context_panel_title_meta(context: &Context) -> (String, Option<Line<'static>>
                 context_play_time(tracks),
             ))),
         ),
-        Context::Show { show, episodes } => (
-            show.name.clone(),
+        Context::Show {
+            show: _show,
+            episodes,
+        } => (
+            "episodes".to_string(),
             Some(Line::from(format!("{} episodes", episodes.len()))),
         ),
     }
