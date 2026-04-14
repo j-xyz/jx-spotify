@@ -1815,8 +1815,8 @@ mod tests {
     }
 
     #[test]
-    fn search_tui_text_and_query_shelf_follow_shell_rhythm() {
-        let cases = [(100, 32, 2), (120, 36, 4), (140, 40, 4), (180, 48, 22)];
+    fn search_tui_text_and_query_shelf_follow_glow_baseline() {
+        let cases = [(100, 32, 2), (120, 36, 2), (140, 40, 2), (180, 48, 2)];
 
         for (width, height, expected_text_x) in cases {
             let shell = utils::content_shell_rect(Rect::new(0, 0, width, height));

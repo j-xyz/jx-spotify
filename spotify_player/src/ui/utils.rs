@@ -7,10 +7,21 @@ use unicode_bidi::BidiInfo;
 const SHELL_WIDE_THRESHOLD: u16 = 120;
 const SHELL_MAX_WIDTH: u16 = 140;
 const SHELL_MIN_SIDE_PADDING: u16 = 2;
+const SHELL_FULL_WIDTH_LIMIT: u16 = 180;
 const SHELL_TEXT_INSET: u16 = 2;
 const ROW_HIGHLIGHT_SYMBOL: &str = "| ";
 
+/// Keep the main chrome and content rails full-width through the fixture ceiling.
+/// Footer/help chrome can opt into the same rail when it needs the shared x=2 alignment.
 pub fn content_shell_rect(rect: Rect) -> Rect {
+    if rect.width <= SHELL_FULL_WIDTH_LIMIT {
+        return rect;
+    }
+
+    bounded_shell_rect(rect)
+}
+
+pub fn bounded_shell_rect(rect: Rect) -> Rect {
     if rect.width < SHELL_WIDE_THRESHOLD {
         return rect;
     }
@@ -261,30 +272,30 @@ mod tests {
     }
 
     #[test]
-    fn shell_is_centered_and_bounded_on_wide_terminal() {
-        let rect = Rect::new(0, 0, 180, 40);
-        let shell = content_shell_rect(rect);
+    fn bounded_shell_is_centered_on_wide_terminal() {
+        let rect = Rect::new(0, 0, 181, 40);
+        let shell = bounded_shell_rect(rect);
 
         assert_eq!(shell.width, SHELL_MAX_WIDTH);
         assert_eq!(shell.x, 20);
     }
 
     #[test]
-    fn shell_preserves_side_padding_even_when_max_width_is_not_hit() {
+    fn bounded_shell_preserves_side_padding_even_when_max_width_is_not_hit() {
         let rect = Rect::new(0, 0, 122, 35);
-        let shell = content_shell_rect(rect);
+        let shell = bounded_shell_rect(rect);
 
         assert_eq!(shell.width, 118);
         assert_eq!(shell.x, 2);
     }
 
     #[test]
-    fn shell_fixture_matrix_matches_phase_zero_expectations() {
+    fn shell_fixture_matrix_matches_glow_baseline() {
         let cases = [
             (100, 32, 100, 0),
-            (120, 36, 116, 2),
-            (140, 40, 136, 2),
-            (180, 48, 140, 20),
+            (120, 36, 120, 0),
+            (140, 40, 140, 0),
+            (180, 48, 180, 0),
         ];
 
         for (width, height, expected_width, expected_x) in cases {
@@ -306,9 +317,9 @@ mod tests {
     }
 
     #[test]
-    fn app_chrome_alignment_matches_phase_zero_shell_matrix() {
+    fn app_chrome_alignment_matches_glow_baseline_shell_matrix() {
         let badge_width = " jx-spotify ".chars().count() as u16;
-        let cases = [(100, 32, 2), (120, 36, 4), (140, 40, 4), (180, 48, 22)];
+        let cases = [(100, 32, 2), (120, 36, 2), (140, 40, 2), (180, 48, 2)];
 
         for (width, height, expected_text_x) in cases {
             let shell = content_shell_rect(Rect::new(0, 0, width, height));
@@ -331,6 +342,65 @@ mod tests {
             assert_eq!(
                 badge_rect.width, badge_width,
                 "unexpected badge width for {width}x{height}"
+            );
+        }
+    }
+
+    #[test]
+    fn footer_chrome_uses_shared_content_rail_in_fixture_matrix() {
+        let cases = [(100, 32, 2), (120, 36, 2), (140, 40, 2), (180, 48, 2)];
+
+        for (width, height, expected_text_x) in cases {
+            let footer_shell = content_shell_rect(Rect::new(0, 0, width, height));
+            let footer_text_rect = shell_text_rect(footer_shell);
+            let bounded_footer_text_rect = shell_text_rect(bounded_shell_rect(Rect::new(
+                0, 0, width, height,
+            )));
+
+            assert_eq!(
+                footer_text_rect.x, expected_text_x,
+                "unexpected footer rail x for {width}x{height}"
+            );
+            assert_eq!(
+                footer_text_rect.width,
+                footer_shell.width.saturating_sub(SHELL_TEXT_INSET),
+                "unexpected footer text width for {width}x{height}"
+            );
+            if width >= SHELL_WIDE_THRESHOLD {
+                assert_ne!(
+                    footer_text_rect.x, bounded_footer_text_rect.x,
+                    "footer should not use the older bounded posture for {width}x{height}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn content_rail_matches_glow_alignment_matrix() {
+        let cases = [(100, 32, 2), (120, 36, 2), (140, 40, 2), (180, 48, 2)];
+
+        for (width, height, expected_text_x) in cases {
+            let shell = content_shell_rect(Rect::new(0, 0, width, height));
+            let text_rect = shell_text_rect(shell);
+            let highlight = highlight_symbol(&config::Theme::default(), true);
+            let rendered_highlight = highlight
+                .spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>();
+
+            assert_eq!(
+                text_rect.x, expected_text_x,
+                "unexpected content rail x for {width}x{height}"
+            );
+            assert_eq!(
+                rendered_highlight, ROW_HIGHLIGHT_SYMBOL,
+                "unexpected gutter symbol for {width}x{height}"
+            );
+            assert_eq!(
+                rendered_highlight.chars().count() as u16,
+                2,
+                "unexpected gutter width for {width}x{height}"
             );
         }
     }

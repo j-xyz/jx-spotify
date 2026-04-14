@@ -203,6 +203,7 @@ fn render_application(frame: &mut Frame, state: &SharedState, ui: &mut UIStateGu
 
     let top_shell = utils::content_shell_rect(chunks[0]);
     let body_shell = utils::content_shell_rect(chunks[1]);
+    // Keep the footer/help shelf on the same x=2 rail as the top/body chrome.
     let footer_shell = utils::content_shell_rect(chunks[2]);
 
     render_app_chrome(frame, state, ui, top_shell, footer_shell);
@@ -275,9 +276,11 @@ fn render_app_chrome(
         detail_rect,
     );
 
+    let footer_text = utils::shell_text_rect(footer);
+
     if ui.footer_help_preview_visible {
         let footer_chunks =
-            Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).split(footer);
+            Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).split(footer_text);
         frame.render_widget(
             Paragraph::new(footer_help_preview_spans(ui)),
             footer_chunks[0],
@@ -297,7 +300,7 @@ fn render_app_chrome(
         );
     } else {
         let bottom_chunks =
-            Layout::horizontal([Constraint::Fill(1), Constraint::Length(28)]).split(footer);
+            Layout::horizontal([Constraint::Fill(1), Constraint::Length(28)]).split(footer_text);
         if let Some(now_playing) = playback::footer_now_playing_line(state, ui) {
             frame.render_widget(Paragraph::new(now_playing), bottom_chunks[0]);
             ui.playback_progress_bar_rect = bottom_chunks[0];
