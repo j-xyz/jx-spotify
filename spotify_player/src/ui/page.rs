@@ -14,9 +14,9 @@ use crate::{
 };
 
 use super::{
-    config, header, utils, Album, Alignment, Artist, ArtistFocusState, BrowsePageUIState, Cell,
-    Constraint, Context, ContextPageUIState, DataReadGuard, Frame, Id, Layout, LibraryFocusState,
-    Modifier, MutableWindowState, Orientation, PageState, Paragraph, PlaylistFolderItem, Rect, Row,
+    config, utils, Album, Alignment, Artist, ArtistFocusState, BrowsePageUIState, Cell, Constraint,
+    Context, ContextPageUIState, DataReadGuard, Frame, Id, Layout, LibraryFocusState, Modifier,
+    MutableWindowState, Orientation, PageState, Paragraph, PlaylistFolderItem, Rect, Row,
     SearchFocusState, SharedState, Span, Style, Table, Text, Track, UIStateGuard,
 };
 use crate::state::BidiDisplay;
@@ -24,7 +24,6 @@ use crate::ui::utils::to_bidi_string;
 
 const COMMAND_TABLE_CONSTRAINTS: [Constraint; 2] =
     [Constraint::Percentage(28), Constraint::Percentage(72)];
-const SEARCH_TUI_HEADER_HEIGHT: u16 = 1;
 const SEARCH_TUI_QUERY_SHELF_HEIGHT: u16 = 2;
 const SEARCH_TUI_SECTION_GAP_HEIGHT: u16 = 1;
 const SEARCH_TUI_SECTION_GAP_THRESHOLD: u16 = 10;
@@ -527,31 +526,25 @@ pub fn render_search_tui_page(
     };
 
     let query = line_input.get_text();
-    let breadcrumb = header::page_breadcrumb_segments(state, ui);
-    let title = search_tui_header_title(&mode, &breadcrumb).to_string();
-    let (source, items): (search_tui::SearchTuiResultsSource, Vec<SearchTuiDisplayRow>) = {
+    let items: Vec<SearchTuiDisplayRow> = {
         let data = state.data.read();
         match &mode {
             SearchTuiMode::Global => {
                 let results = search_tui::build_items(&data, &mode, &query);
-                (
-                    results.source,
-                    results
-                        .items
-                        .into_iter()
-                        .map(|item| SearchTuiDisplayRow::from_item(item, &data))
-                        .collect(),
-                )
+                results
+                    .items
+                    .into_iter()
+                    .map(|item| SearchTuiDisplayRow::from_item(item, &data))
+                    .collect()
             }
             SearchTuiMode::Playlist { title: _title, .. }
             | SearchTuiMode::Album { title: _title, .. }
-            | SearchTuiMode::Artist { title: _title, .. } => (
-                search_tui::SearchTuiResultsSource::Standard,
+            | SearchTuiMode::Artist { title: _title, .. } => {
                 search_tui::build_context_tracks(&data, &mode, &query)
                     .into_iter()
                     .map(|track| search_tui_playlist_row(track, &data))
-                    .collect::<Vec<_>>(),
-            ),
+                    .collect::<Vec<_>>()
+            }
         }
     };
 
@@ -564,33 +557,19 @@ pub fn render_search_tui_page(
     };
     let layout = if search_visible {
         Layout::vertical([
-            Constraint::Length(SEARCH_TUI_HEADER_HEIGHT),
             Constraint::Min(1),
             Constraint::Length(gap_height),
             Constraint::Length(SEARCH_TUI_QUERY_SHELF_HEIGHT),
         ])
         .split(workspace)
     } else {
-        Layout::vertical([
-            Constraint::Length(SEARCH_TUI_HEADER_HEIGHT),
-            Constraint::Min(1),
-        ])
-        .split(workspace)
+        Layout::vertical([Constraint::Min(1)]).split(workspace)
     };
 
-    render_search_tui_header(
-        frame,
-        layout[0],
-        &title,
-        Some(search_tui_results_meta_line(items.len(), source, ui)),
-        is_active && focus == SearchTuiFocus::Results,
-        ui,
-    );
-
-    let results_rect = layout[1];
+    let results_rect = layout[0];
 
     if search_visible {
-        let query_rect = layout[3];
+        let query_rect = layout[2];
         frame.render_widget(
             Paragraph::new(Text::from(vec![
                 Line::from(vec![
@@ -628,43 +607,6 @@ pub fn render_search_tui_page(
     render_search_tui_results(frame, results_rect, items, is_active, focus, ui);
 }
 
-fn search_tui_results_meta_line(
-    count: usize,
-    source: search_tui::SearchTuiResultsSource,
-    ui: &UIStateGuard,
-) -> Line<'static> {
-    let mut spans = vec![Span::styled(
-        format!("{count} items"),
-        ui.theme.playback_metadata(),
-    )];
-    match source {
-        search_tui::SearchTuiResultsSource::Standard => {}
-        search_tui::SearchTuiResultsSource::RecentSeeds => {
-            spans.push(Span::styled(" · ", ui.theme.playback_metadata()));
-            spans.push(Span::styled("recent seeds", ui.theme.playlist_desc()));
-        }
-        search_tui::SearchTuiResultsSource::LocalFallback => {
-            spans.push(Span::styled(" · ", ui.theme.playback_metadata()));
-            spans.push(Span::styled("local fallback", ui.theme.playlist_desc()));
-        }
-    }
-
-    Line::from(spans)
-}
-
-fn search_tui_header_title(
-    mode: &SearchTuiMode,
-    breadcrumb: &[header::BreadcrumbSegment],
-) -> &'static str {
-    if matches!(mode, SearchTuiMode::Global)
-        && matches!(breadcrumb, [segment] if segment == &header::BreadcrumbSegment::plain("search-tui"))
-    {
-        "results"
-    } else {
-        "tracks"
-    }
-}
-
 fn search_tui_text_rect(rect: Rect) -> Rect {
     utils::shell_text_rect(rect)
 }
@@ -677,17 +619,6 @@ fn search_tui_query_input_rect(rect: Rect) -> Rect {
         text_rect.width,
         rect.height.saturating_sub(1),
     )
-}
-
-fn render_search_tui_header(
-    frame: &mut Frame,
-    rect: Rect,
-    title: &str,
-    meta: Option<Line<'static>>,
-    is_active: bool,
-    ui: &UIStateGuard,
-) {
-    utils::render_section_header(frame, &ui.theme, rect, title, meta, is_active);
 }
 
 fn search_tui_sigil_meta_line(mode: &SearchTuiMode) -> &'static str {

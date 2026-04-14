@@ -256,7 +256,10 @@ fn render_app_chrome(
     frame.render_widget(Paragraph::new(""), top_rows[1]);
     let header_text_rect = utils::shell_text_rect(top_rows[1]);
     let badge_rect = utils::app_badge_rect(top_rows[1], badge_width);
-    let detail_x = badge_rect.x.saturating_add(badge_rect.width).saturating_add(2);
+    let detail_x = badge_rect
+        .x
+        .saturating_add(badge_rect.width)
+        .saturating_add(2);
     let detail_width = header_text_rect
         .x
         .saturating_add(header_text_rect.width)
@@ -271,11 +274,30 @@ fn render_app_chrome(
         Paragraph::new(Span::styled(badge, ui.theme.app_title_badge())),
         badge_rect,
     );
-    let header_line = header::app_header_line(state, ui, detail_rect.width as usize);
-    frame.render_widget(
-        Paragraph::new(Span::styled(header_line, ui.theme.playback_metadata())),
-        detail_rect,
-    );
+    let header_meta = header::app_header_meta_line(state, ui);
+    if let Some(meta) = header_meta {
+        let meta_width = line_width_chars(&meta);
+        let detail_chunks = Layout::horizontal([
+            Constraint::Fill(1),
+            Constraint::Length(meta_width.min(detail_rect.width)),
+        ])
+        .split(detail_rect);
+        let header_line = header::app_header_line(state, ui, detail_chunks[0].width as usize);
+        frame.render_widget(
+            Paragraph::new(Span::styled(header_line, ui.theme.playback_metadata())),
+            detail_chunks[0],
+        );
+        frame.render_widget(
+            Paragraph::new(meta).alignment(Alignment::Right),
+            detail_chunks[1],
+        );
+    } else {
+        let header_line = header::app_header_line(state, ui, detail_rect.width as usize);
+        frame.render_widget(
+            Paragraph::new(Span::styled(header_line, ui.theme.playback_metadata())),
+            detail_rect,
+        );
+    }
 
     let footer_text = utils::shell_text_rect(footer);
 
@@ -360,6 +382,13 @@ fn app_key_hint_spans(ui: &UIStateGuard) -> Line<'static> {
         Span::styled("?", key),
         Span::styled(" help", label),
     ])
+}
+
+fn line_width_chars(line: &Line<'_>) -> u16 {
+    line.spans
+        .iter()
+        .map(|span| span.content.chars().count() as u16)
+        .sum()
 }
 
 fn pending_family_key_hint_spans(

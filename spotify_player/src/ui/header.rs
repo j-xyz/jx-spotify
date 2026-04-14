@@ -1,10 +1,12 @@
 use crate::{
+    search_tui,
     state::{
         BrowsePageUIState, Context, ContextId, ContextPageType, Id, PageState, SearchTuiMode,
         SharedState, UIStateGuard,
     },
     utils::map_join,
 };
+use ratatui::text::{Line, Span};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct BreadcrumbSegment {
@@ -46,6 +48,49 @@ pub(crate) fn app_header_line(state: &SharedState, ui: &UIStateGuard, max_chars:
     format_segments(&page_breadcrumb_segments(state, ui), max_chars)
 }
 
+pub(crate) fn app_header_meta_line(
+    state: &SharedState,
+    ui: &UIStateGuard,
+) -> Option<Line<'static>> {
+    match ui.current_page() {
+        PageState::SearchTui {
+            state: page_state,
+            line_input,
+        } => {
+            let query = line_input.get_text();
+            let data = state.data.read();
+            let (count, source) = match &page_state.mode {
+                SearchTuiMode::Global => {
+                    let results = search_tui::build_items(&data, &page_state.mode, &query);
+                    (results.items.len(), results.source)
+                }
+                SearchTuiMode::Playlist { .. }
+                | SearchTuiMode::Album { .. }
+                | SearchTuiMode::Artist { .. } => (
+                    search_tui::build_context_tracks(&data, &page_state.mode, &query).len(),
+                    search_tui::SearchTuiResultsSource::Standard,
+                ),
+            };
+
+            let mut spans = vec![Span::styled(format!("{count} items"), ui.theme.page_desc())];
+            match source {
+                search_tui::SearchTuiResultsSource::Standard => {}
+                search_tui::SearchTuiResultsSource::RecentSeeds => {
+                    spans.push(Span::styled(" · ", ui.theme.playback_metadata()));
+                    spans.push(Span::styled("recent seeds", ui.theme.playlist_desc()));
+                }
+                search_tui::SearchTuiResultsSource::LocalFallback => {
+                    spans.push(Span::styled(" · ", ui.theme.playback_metadata()));
+                    spans.push(Span::styled("local fallback", ui.theme.playlist_desc()));
+                }
+            }
+
+            Some(Line::from(spans))
+        }
+        _ => None,
+    }
+}
+
 pub(crate) fn page_breadcrumb_segments(
     state: &SharedState,
     ui: &UIStateGuard,
@@ -62,24 +107,7 @@ pub(crate) fn page_breadcrumb_segments(
             }
         }
         PageState::SearchTui { state, .. } => {
-            let segments = search_tui_history_segments(ui, &data);
-            if segments.is_empty() {
-                match &state.mode {
-                    SearchTuiMode::Global => vec![BreadcrumbSegment::plain("search-tui")],
-                    SearchTuiMode::Playlist { title, .. } => vec![BreadcrumbSegment::plain(title)],
-                    SearchTuiMode::Album { album_id, title } => data
-                        .caches
-                        .context
-                        .get(&album_id.uri())
-                        .map(context_breadcrumb_segments)
-                        .unwrap_or_else(|| vec![BreadcrumbSegment::sigil('!', title)]),
-                    SearchTuiMode::Artist { title, .. } => {
-                        vec![BreadcrumbSegment::sigil('@', title)]
-                    }
-                }
-            } else {
-                segments
-            }
+            search_tui_breadcrumb_segments(&state.mode, ui, &data)
         }
         PageState::Context {
             id,
@@ -125,6 +153,42 @@ pub(crate) fn page_breadcrumb_segments(
         PageState::CommandHelp { .. } => vec![BreadcrumbSegment::plain("families")],
         PageState::Logs { .. } => vec![BreadcrumbSegment::plain("session")],
     }
+}
+
+fn search_tui_breadcrumb_segments(
+    mode: &SearchTuiMode,
+    ui: &UIStateGuard,
+    data: &crate::state::DataReadGuard,
+) -> Vec<BreadcrumbSegment> {
+    let mut segments = search_tui_history_segments(ui, data);
+    if segments.is_empty() {
+        match mode {
+            SearchTuiMode::Global => segments.push(BreadcrumbSegment::plain("search-tui")),
+            SearchTuiMode::Playlist { title, .. } => {
+                segments.push(BreadcrumbSegment::plain(title.clone()))
+            }
+            SearchTuiMode::Album { album_id, title } => {
+                segments.extend(
+                    data.caches
+                        .context
+                        .get(&album_id.uri())
+                        .map(context_breadcrumb_segments)
+                        .unwrap_or_else(|| vec![BreadcrumbSegment::sigil('!', title.clone())]),
+                );
+            }
+            SearchTuiMode::Artist { title, .. } => {
+                segments.push(BreadcrumbSegment::sigil('@', title.clone()))
+            }
+        }
+    }
+
+    segments.push(BreadcrumbSegment::plain(match mode {
+        SearchTuiMode::Global => "results",
+        SearchTuiMode::Playlist { .. }
+        | SearchTuiMode::Album { .. }
+        | SearchTuiMode::Artist { .. } => "tracks",
+    }));
+    segments
 }
 
 fn search_tui_history_segments(
