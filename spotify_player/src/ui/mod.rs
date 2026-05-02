@@ -130,6 +130,7 @@ fn render_main_layout(
     match page_type {
         PageType::Library => page::render_library_page(is_active, frame, state, ui, rect),
         PageType::Search => page::render_search_page(is_active, frame, state, ui, rect),
+        PageType::SearchTui => page::render_search_tui_page(is_active, frame, state, ui, rect),
         PageType::Context => page::render_context_page(is_active, frame, state, ui, rect),
         PageType::Browse => page::render_browse_page(is_active, frame, state, ui, rect),
         PageType::Lyrics => page::render_lyrics_page(is_active, frame, state, ui, rect),

@@ -6,7 +6,12 @@ use std::{
 use chrono_humanize::HumanTime;
 use ratatui::text::Line;
 
-use crate::{state::Episode, utils::format_duration};
+use crate::{
+    search_tui,
+    state::{Episode, SearchTuiMode},
+    utils::format_duration,
+};
+use ratatui::widgets::Wrap;
 
 use super::{
     config, utils, utils::construct_and_render_block, Album, Alignment, Artist, ArtistFocusState,
@@ -250,6 +255,64 @@ pub fn render_search_page(
         n_episodes,
         &mut page_state.episode_list,
     );
+}
+
+pub fn render_search_tui_page(
+    is_active: bool,
+    frame: &mut Frame,
+    state: &SharedState,
+    ui: &mut UIStateGuard,
+    rect: Rect,
+) {
+    let data = state.data.read();
+
+    let (mode, line_input) = match ui.current_page() {
+        PageState::SearchTui { state, line_input } => (&state.mode, line_input),
+        _ => return,
+    };
+
+    let query = line_input.get_text();
+    let (title, items, help_text) = match mode {
+        SearchTuiMode::Global => (
+            "Search TUI",
+            search_tui::build_items(&data, mode, &query)
+                .into_iter()
+                .map(|item| (to_bidi_string(&item.label()), false))
+                .collect::<Vec<_>>(),
+            "Type to search. Enter plays items, Enter on playlists drills in, M-p plays a playlist, M-r opens radio, Esc clears or quits.",
+        ),
+        SearchTuiMode::Playlist { playlist_name, .. } => (
+            playlist_name.as_str(),
+            search_tui::build_playlist_tracks(&data, mode, &query)
+                .into_iter()
+                .map(|track| (to_bidi_string(&format!("[track] {track}")), false))
+                .collect::<Vec<_>>(),
+            "Playlist mode. Type to filter locally. Enter plays the selected track in this playlist. Esc returns to global search.",
+        ),
+    };
+
+    let rect = construct_and_render_block(title, &ui.theme, Borders::ALL, frame, rect);
+    let chunks = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Length(2),
+        Constraint::Fill(0),
+    ])
+    .split(rect);
+
+    frame.render_widget(line_input.widget(is_active), chunks[0]);
+    frame.render_widget(
+        Paragraph::new(help_text).wrap(Wrap { trim: true }),
+        chunks[1],
+    );
+
+    let (list, len) = utils::construct_list_widget(&ui.theme, items, is_active);
+    let PageState::SearchTui {
+        state: page_state, ..
+    } = ui.current_page_mut()
+    else {
+        return;
+    };
+    utils::render_list_window(frame, list, chunks[2], len, &mut page_state.result_list);
 }
 
 pub fn render_context_page(

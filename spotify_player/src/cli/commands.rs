@@ -134,6 +134,10 @@ pub fn init_search_command() -> Command {
         .arg(Arg::new("query").help("Search query").required(true))
 }
 
+pub fn init_search_tui_command() -> Command {
+    Command::new("search-tui").about("Launch the barebones search-first TUI")
+}
+
 pub fn init_like_command() -> Command {
     Command::new("like")
         .about("Like currently playing track")
