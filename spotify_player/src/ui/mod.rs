@@ -2,10 +2,9 @@ use crate::{
     config,
     state::{
         Album, Artist, ArtistFocusState, BrowsePageUIState, Context, ContextPageUIState,
-        DataReadGuard, ExternalLaunchRequest, Id, LibraryFocusState, MutableWindowState, PageState,
-        PageType, PlaybackMetadata, PlaylistCreateCurrentField, PlaylistFolderItem,
-        PlaylistPopupAction, PopupState, SearchFocusState, SearchTuiMode, SharedState, Track,
-        UIStateGuard,
+        DataReadGuard, Id, LibraryFocusState, MutableWindowState, PageState, PageType,
+        PlaybackMetadata, PlaylistCreateCurrentField, PlaylistFolderItem, PlaylistPopupAction,
+        PopupState, SearchFocusState, SearchTuiMode, SharedState, Track, UIStateGuard,
     },
 };
 use anyhow::{Context as AnyhowContext, Result};
@@ -47,12 +46,8 @@ pub fn run(state: &SharedState) -> Result<()> {
         let next_refresh_duration = {
             let mut ui = state.ui.lock();
             if !ui.is_running {
-                let pending_external_launch = ui.pending_external_launch.take();
                 drop(ui);
                 clean_up(terminal).context("clean up UI resources")?;
-                if let Some(request) = pending_external_launch {
-                    launch_external_after_exit(request)?;
-                }
                 std::process::exit(0);
             }
 
@@ -153,41 +148,6 @@ fn clean_up(mut terminal: Terminal) -> Result<()> {
     )?;
     terminal.show_cursor()?;
     Ok(())
-}
-
-fn launch_external_after_exit(request: ExternalLaunchRequest) -> Result<()> {
-    let mut command = std::process::Command::new(&request.command);
-    command.args(&request.args);
-    command.stdin(std::process::Stdio::inherit());
-    command.stdout(std::process::Stdio::inherit());
-    command.stderr(std::process::Stdio::inherit());
-    for (key, value) in &request.env {
-        command.env(key, value);
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        // Replace jx-spotify with the target command so foreground terminal
-        // ownership stays with the handoff process.
-        let err = command.exec();
-        return Err(err).with_context(|| {
-            format!(
-                "failed to exec external command after terminal cleanup: `{}`",
-                request.command
-            )
-        });
-    }
-
-    #[cfg(not(unix))]
-    {
-        command.spawn().with_context(|| {
-            format!(
-                "failed to launch external command after terminal cleanup: `{}`",
-                request.command
-            )
-        })?;
-        Ok(())
-    }
 }
 
 /// Render the application

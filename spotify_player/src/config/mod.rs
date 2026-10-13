@@ -61,7 +61,6 @@ pub struct AppConfig {
     pub log_folder: Option<PathBuf>,
 
     pub player_event_hook_command: Option<Command>,
-    pub external_glow_command: Option<Command>,
 
     pub playback_format: String,
     pub playback_metadata_fields: Vec<String>,
@@ -295,7 +294,6 @@ impl Default for AppConfig {
             login_redirect_uri: "http://127.0.0.1:8989/login".to_string(),
 
             log_folder: None,
-            external_glow_command: None,
 
             tracks_playback_limit: 50,
 

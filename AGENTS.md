@@ -20,5 +20,5 @@
 
 ## Cross-Project Boundary
 
-- Keep keyboard grammar, shell geometry, and handoff conventions compatible with `jx-glow` and `jx-twig`, but do not modify those repos from here.
+- Keep keyboard grammar and shell geometry compatible with `jx-glow` and `jx-twig`, but do not modify those repos from here.
 - Preserve the `spotify_player` package name, binary name, and documented command surface unless a user-facing change is intended.

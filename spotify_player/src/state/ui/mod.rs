@@ -15,13 +15,6 @@ mod popup;
 pub use page::*;
 pub use popup::*;
 
-#[derive(Debug, Clone)]
-pub struct ExternalLaunchRequest {
-    pub command: String,
-    pub args: Vec<String>,
-    pub env: Vec<(String, String)>,
-}
-
 #[derive(Default, Debug)]
 #[cfg(feature = "image")]
 pub struct ImageRenderInfo {
@@ -50,9 +43,6 @@ pub struct UIState {
 
     /// Count prefix for vim-style navigation (e.g., 5j, 10k)
     pub count_prefix: Option<usize>,
-
-    /// Optional command to run after UI teardown for cross-app handoff.
-    pub pending_external_launch: Option<ExternalLaunchRequest>,
 
     #[cfg(feature = "image")]
     pub last_cover_image_render_info: ImageRenderInfo,
@@ -167,7 +157,6 @@ impl Default for UIState {
             playback_progress_bar_rect: Rect::default(),
 
             count_prefix: None,
-            pending_external_launch: None,
 
             #[cfg(feature = "image")]
             last_cover_image_render_info: ImageRenderInfo::default(),

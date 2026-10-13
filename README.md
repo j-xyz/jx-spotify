@@ -430,7 +430,6 @@ List of supported commands:
 | `OpenCommandHelp`               | go to the command help page (`?` opens the footer preview first on most non-text pages)           | `?`                |
 | `PreviousPage`                  | go back or close the current popup                                                                 | `esc`, `g u`       |
 | `OpenLogs`                      | go to the application logs page                                                                    | `g o`              |
-| `GoExternalGlow`                | hand off to `jx-glow` with current playback context                                                | `g x g`            |
 | `OpenSpotifyLinkFromClipboard`  | open a Spotify link from clipboard                                                                 | `O`                |
 | `SortTrackByTitle`              | sort the track table (if any) by track's title                                                     | `s t`              |
 | `SortTrackByArtists`            | sort the track table (if any) by track's artists                                                   | `s a`              |

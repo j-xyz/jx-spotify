@@ -19,4 +19,4 @@
 ## Boundary
 
 - This repo should remain a terminal player and control surface, not a general task or document system.
-- `jx-glow` handoff support and cross-project UI conventions are shared boundaries, not invitations to widen the repo's scope.
+- Shared visual conventions are reference material; the player runs independently.
